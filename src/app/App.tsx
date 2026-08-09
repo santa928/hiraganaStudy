@@ -220,6 +220,15 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
       audio.cancel();
       effects.stopGardenLoop();
       setScreen("soundGate");
+    } catch (error) {
+      const recoveryGeneration = persistenceGenerationRef.current;
+      const recoveryProgress = state.progress;
+      // reset失敗時はgenerationで除外した最新状態を、同世代で保存し直す。
+      void queuePersistence(async () => {
+        if (recoveryGeneration !== persistenceGenerationRef.current) return;
+        await runtime.progressRepository.save(recoveryProgress);
+      }).catch(() => undefined);
+      throw error;
     } finally {
       resetInFlightRef.current = false;
     }

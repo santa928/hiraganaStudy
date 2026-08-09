@@ -229,4 +229,38 @@ describe("App", () => {
     await act(async () => { resolveSave?.(); });
     await waitFor(() => expect(reset).toHaveBeenCalledOnce());
   });
+
+  it("reset失敗後はgenerationでskipした最新進捗を保存し直す", async () => {
+    const user = userEvent.setup();
+    const base = createInitialProgress();
+    const saved: LearningProgress = { ...base, kana: { ...base.kana, あ: { ...base.kana.あ, seen: true } } };
+    let resolveFirstSave: (() => void) | undefined;
+    let rejectReset: ((error: Error) => void) | undefined;
+    const save = vi.fn()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveFirstSave = resolve; }))
+      .mockResolvedValue(undefined);
+    const reset = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectReset = reject; }));
+    const runtime: GameRuntime = { progressRepository: { load: vi.fn().mockResolvedValue(saved), save, reset }, storageDegraded: false };
+    render(<App runtime={runtime} />);
+
+    const gate = await screen.findByRole("button", { name: "おとなの せってい" });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(gate, { pointerId: 1 });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    fireEvent.pointerUp(gate, { pointerId: 1 });
+    vi.useRealTimers();
+    await user.click(screen.getByRole("checkbox", { name: "こえ" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    await user.click(screen.getByRole("checkbox", { name: "こうかおん" }));
+    await user.click(screen.getByRole("button", { name: "ひだりの は" }));
+    await user.click(screen.getByRole("button", { name: "まんなかの は" }));
+    await user.click(screen.getByRole("button", { name: "みぎの は" }));
+    await user.click(screen.getByRole("button", { name: "ほんとうに はじめからにする" }));
+    await act(async () => { resolveFirstSave?.(); });
+    await waitFor(() => expect(reset).toHaveBeenCalledOnce());
+    await act(async () => { rejectReset?.(new Error("storage")); });
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ speech: false, effects: false }) }));
+  });
 });
