@@ -183,6 +183,7 @@ async function measureViewport(browser, options, viewport, errors) {
       { name: "guide", rect: toRect(guide), parentRect: rootRect },
       { name: "body", rect: bodyRect, parentRect: rootRect },
       { name: "material", rect: toRect(material), parentRect: bodyRect },
+      { name: "card", rect: toRect(card), parentRect: toRect(material) },
       { name: "actions", rect: toRect(actions), parentRect: bodyRect },
     ];
     return {

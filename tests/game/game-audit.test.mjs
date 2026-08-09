@@ -67,13 +67,20 @@ describe("完成版browser監査の固定scenario", () => {
     const issues = findContainmentIssues({
       viewport: { width: 390, height: 844 },
       root,
-      card: { left: 10, top: 100, right: 380, bottom: 700, width: 370, height: 600 },
+      card: { left: 10, top: 100, right: 410, bottom: 700, width: 400, height: 600 },
       children: [],
-      regions: [{
-        name: "actions",
-        rect: { left: 380, top: 90, right: 430, bottom: 200, width: 50, height: 110 },
-        parentRect: root,
-      }],
+      regions: [
+        {
+          name: "card",
+          rect: { left: 10, top: 100, right: 410, bottom: 700, width: 400, height: 600 },
+          parentRect: { left: 20, top: 90, right: 370, bottom: 710, width: 350, height: 620 },
+        },
+        {
+          name: "actions",
+          rect: { left: 380, top: 90, right: 430, bottom: 200, width: 50, height: 110 },
+          parentRect: root,
+        },
+      ],
       hudBottom: 80,
       materialTop: 100,
       targets: [{
@@ -87,6 +94,8 @@ describe("完成版browser監査の固定scenario", () => {
     expect(issues).toContain("touch target不足: choice-outside 50x50 (64px必要)");
     expect(issues).toContain("touch target親境界外: choice-outside");
     expect(issues).toContain("touch target viewport外: choice-outside");
+    expect(issues).toContain("layout親境界外: card");
+    expect(issues).toContain("layout viewport外: card");
     expect(issues).toContain("layout親境界外: actions");
     expect(issues).toContain("layout viewport外: actions");
   });
