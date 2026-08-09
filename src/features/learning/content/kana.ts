@@ -65,3 +65,10 @@ export function findKana(character: KanaCharacter): KanaEntry {
 
   return entry;
 }
+
+/** イラストの語と学習文字を、頭文字でない「を」「ん」も含め自然に結び付ける。 */
+export function kanaAssociationLabel(entry: KanaEntry): string {
+  if (entry.specialUsage === "particle") return `${entry.spokenLabel}。もじの ${entry.character}`;
+  if (entry.specialUsage === "wordEnding") return entry.spokenLabel;
+  return `${entry.spokenLabel}の ${entry.character}`;
+}

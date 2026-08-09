@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { KANA_ENTRIES, KANA_ORDER, findKana } from "./kana";
+import { KANA_ENTRIES, KANA_ORDER, findKana, kanaAssociationLabel } from "./kana";
 import type { KanaCharacter, KanaEntry } from "./types";
 import { validateKanaEntries } from "./validateContent";
 
@@ -10,6 +10,19 @@ function asKanaEntriesForAudit(entries: readonly unknown[]): readonly KanaEntry[
 }
 
 describe("五十音コンテンツ", () => {
+  it("イラストの語と文字を通常文字・を・んで自然な案内へ結び付ける", () => {
+    expect(kanaAssociationLabel(findKana("あ"))).toBe("あひるの あ");
+    expect(kanaAssociationLabel(findKana("い"))).toBe("いぬの い");
+    expect(kanaAssociationLabel(findKana("を"))).toBe("りんごを たべる。もじの を");
+    expect(kanaAssociationLabel(findKana("ん"))).toBe("ぱんの さいごの、ん");
+    for (const entry of KANA_ENTRIES) {
+      expect(kanaAssociationLabel(entry)).toContain(entry.spokenLabel);
+      if (!entry.specialUsage) {
+        expect(kanaAssociationLabel(entry)).toBe(`${entry.spokenLabel}の ${entry.character}`);
+      }
+    }
+  });
+
   it("設計順どおり46文字を重複なく持つ", () => {
     expect(KANA_ENTRIES.map(({ character }) => character)).toEqual([
       "あ", "い", "う", "え", "お", "か", "き", "く", "け", "こ",

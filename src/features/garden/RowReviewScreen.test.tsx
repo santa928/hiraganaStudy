@@ -24,6 +24,7 @@ describe("RowReviewScreen", () => {
     const { rerender } = render(<RowReviewScreen state={reviewState("よ", "ya", "shape")} dispatch={dispatch} audio={audio} />);
 
     expect(screen.getByTestId("row-review")).toHaveAttribute("data-step", "shape");
+    expect(screen.getByText("よっとの よ。おなじ かたちを さがそう")).toBeVisible();
     expect(screen.getByTestId("prompt-character")).toHaveTextContent("よ");
     expect(screen.getAllByRole("button", { name: /^もじ / })).toHaveLength(3);
     expect(screen.getByRole("button", { name: "もじ や" })).toBeVisible();

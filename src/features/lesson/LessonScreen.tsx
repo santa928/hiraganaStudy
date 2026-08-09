@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef } from "react";
 import type { AudioGuide } from "../../platform/audio/AudioGuide";
 import { useFullscreen } from "../../platform/fullscreen/useFullscreen";
 import { getIllustration, getWorldIllustration } from "../learning/content/assetCatalog";
-import { KANA_ORDER, findKana } from "../learning/content/kana";
+import { KANA_ORDER, findKana, kanaAssociationLabel } from "../learning/content/kana";
+import type { KanaEntry } from "../learning/content/types";
 import type { LearningState, LessonEvent } from "../learning/model/types";
 import { ChoiceGrid } from "./ChoiceGrid";
 import { PromptCard } from "./PromptCard";
@@ -25,18 +26,19 @@ export interface LessonScreenProps {
 type GuideKey = "intro" | "shape" | "sound" | "again" | "show" | "traceWide" | "traceNarrow" | "copyWithModel" | "freeWrite" | "reward";
 
 /** 画面と読み上げが必ず同じ案内を使うための、短いコンテンツ辞書。 */
-function guideMessage(key: GuideKey, character: string): string {
+function guideMessage(key: GuideKey, entry: KanaEntry): string {
+  const association = kanaAssociationLabel(entry);
   const messages: Record<GuideKey, string> = {
-    intro: `${character} に あってみよう`,
-    shape: `おなじ かたちの ${character} を さがそう`,
-    sound: `こえと えを きいて、もじを さがそう`,
-    again: `もういちど、ゆっくり みてみよう`,
-    show: `${character} を おしてみよう`,
+    intro: association,
+    shape: `${association}。おなじ かたちを さがそう`,
+    sound: `${association}。こえと えで もじを さがそう`,
+    again: `もういちど、${association}。ゆっくり みてみよう`,
+    show: `${association}。おなじ もじを おしてみよう`,
     traceWide: "ふとい みちを なぞろう",
     traceNarrow: "ほそい みちを なぞろう",
     copyWithModel: "おてほんを みて かこう",
     freeWrite: "じぶんで かいてみよう",
-    reward: `${character} の はなが さいたよ`,
+    reward: `${entry.character} の はなが さいたよ`,
   };
   return messages[key];
 }
@@ -87,7 +89,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
     : state.stage === "soundMatch"
       ? stageAttempts >= 3 ? "show" : stageAttempts >= 1 ? "again" : "sound"
       : state.stage;
-  const guide = guideMessage(guideKey, entry.character);
+  const guide = guideMessage(guideKey, entry);
   const stageIdentityRef = useRef(stageIdentity);
   const guideRef = useRef(guide);
   stageIdentityRef.current = stageIdentity;

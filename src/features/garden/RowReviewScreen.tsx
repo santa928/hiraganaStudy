@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import type { AudioGuide } from "../../platform/audio/AudioGuide";
 import { getWorldIllustration } from "../learning/content/assetCatalog";
-import { KANA_ENTRIES, findKana } from "../learning/content/kana";
+import { KANA_ENTRIES, findKana, kanaAssociationLabel } from "../learning/content/kana";
 import type { KanaCharacter } from "../learning/content/types";
 import type { LearningState, LessonEvent } from "../learning/model/types";
 import { ChoiceGrid } from "../lesson/ChoiceGrid";
@@ -38,9 +38,10 @@ export function RowReviewScreen({ state, dispatch, audio }: RowReviewScreenProps
   const attempt = state.progress.lessonAttempt?.character === entry.character && state.progress.lessonAttempt.stage === state.stage
     ? state.progress.lessonAttempt.count
     : 0;
+  const association = kanaAssociationLabel(entry);
   const guide = isShape
-    ? attempt >= 2 ? `${entry.character} を みつけよう` : `${entry.character} と おなじ かたちを さがそう`
-    : attempt >= 2 ? `${entry.character} を きいて さがそう` : "こえを きいて もじを さがそう";
+    ? attempt >= 2 ? `${association}。おなじ もじを おしてみよう` : `${association}。おなじ かたちを さがそう`
+    : attempt >= 2 ? `${association}。こえを きいて さがそう` : `${association}。こえを きいて もじを さがそう`;
   const stageIdentity = `${entry.character}-${step}-${attempt}`;
   const mountedRef = useRef(true);
   const replayRequestRef = useRef(0);

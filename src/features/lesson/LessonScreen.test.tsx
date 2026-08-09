@@ -7,6 +7,21 @@ import { createLessonChoices } from "./LessonScreen";
 import type { AudioGuide } from "../../platform/audio/AudioGuide";
 
 describe("LessonScreen", () => {
+  it("形合わせはイラスト名と文字を結び付けて画面表示と読み上げに使う", () => {
+    const audio: AudioGuide = {
+      unlock: vi.fn().mockResolvedValue("ready"),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "ready",
+    };
+
+    renderLesson({ currentKana: "あ", stage: "shapeMatch", audio });
+
+    const guide = "あひるの あ。おなじ かたちを さがそう";
+    expect(screen.getByText(guide)).toBeVisible();
+    expect(audio.speak).toHaveBeenCalledWith(guide, { interrupt: true });
+  });
+
   it("形合わせは問題に絵と大きな文字を出し、選択肢を文字だけにする", () => {
     renderLesson({ currentKana: "あ", stage: "shapeMatch" });
 
@@ -63,6 +78,7 @@ describe("LessonScreen", () => {
     const choices = screen.getAllByRole("button", { name: /もじ/ });
 
     fireEvent.click(choices.find((choice) => choice.textContent !== "あ")!);
+    expect(screen.getByText("もういちど、あひるの あ。ゆっくり みてみよう")).toBeVisible();
     fireEvent.click(choices.find((choice) => choice.textContent !== "あ")!);
     fireEvent.click(choices.find((choice) => choice.textContent !== "あ")!);
 
