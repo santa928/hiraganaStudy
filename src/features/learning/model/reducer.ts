@@ -53,6 +53,28 @@ function stateFromProgress(progress: LearningProgress): LearningState {
   };
 }
 
+/** 型境界を越えて渡った再開進捗が現在文字を安全に復元できるかを検査する。 */
+function isResumableProgress(progress: unknown): progress is LearningProgress {
+  if (typeof progress !== "object" || progress === null) return false;
+
+  const candidate = progress as { readonly currentKanaIndex?: unknown; readonly kana?: unknown };
+  const currentKanaIndex = candidate.currentKanaIndex;
+  const kana = candidate.kana;
+
+  if (
+    typeof currentKanaIndex !== "number"
+    || !Number.isInteger(currentKanaIndex)
+    || currentKanaIndex < 0
+    || currentKanaIndex >= KANA_ORDER.length
+    || typeof kana !== "object"
+    || kana === null
+  ) {
+    return false;
+  }
+
+  return KANA_ORDER.every((character) => Object.hasOwn(kana, character));
+}
+
 /** 現在文字の進捗だけを不変に更新する。 */
 function updateCurrentKana(
   state: LearningState,
@@ -127,7 +149,7 @@ function getKanaRow(character: KanaCharacter): KanaEntry["row"] {
 /** 学習イベントを処理し、入力を変更せず次の状態を返す。 */
 export function reduceLesson(state: LearningState, event: LessonEvent): LearningState {
   if (event.type === "RESUME") {
-    return stateFromProgress(event.progress);
+    return stateFromProgress(isResumableProgress(event.progress) ? event.progress : createInitialProgress());
   }
 
   if (event.type === "START" && state.stage === "intro") {

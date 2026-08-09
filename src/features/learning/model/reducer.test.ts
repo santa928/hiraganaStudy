@@ -142,6 +142,8 @@ describe("学習状態機械", () => {
     const completed = reduceLesson(sound, { type: "ANSWER_SOUND", correct: true });
 
     expect(completed.progress.kana["ん"].completedOnce).toBe(true);
+    expect(selectRoute(review.progress)).toEqual({ kind: "rowReview", row: "wa" });
+    expect(selectRoute(sound.progress)).toEqual({ kind: "rowReview", row: "wa" });
     expect(selectRoute(completed.progress)).toEqual({ kind: "wordGarden" });
   });
 
@@ -152,6 +154,23 @@ describe("学習状態機械", () => {
     expect(result.currentKana).toBe("く");
     expect(result.stage).toBe("traceNarrow");
     expect(result.progress).toEqual(saved);
+  });
+
+  it.each([
+    ["非整数の文字index", { ...progressAt("く", "traceNarrow"), currentKanaIndex: 7.5 }],
+    ["範囲外の文字index", { ...progressAt("く", "traceNarrow"), currentKanaIndex: 46 }],
+    ["不完全なkana record", { ...progressAt("く", "traceNarrow"), kana: { あ: progressAt("く", "traceNarrow").kana["あ"] } }],
+  ])("RESUMEは%sを初期進捗へ安全にフォールバックする", (_description, invalidProgress) => {
+    const result = reduceLesson(
+      stateAt("あ", "intro"),
+      { type: "RESUME", progress: invalidProgress as unknown as ReturnType<typeof createInitialProgress> },
+    );
+
+    expect(result).toEqual({
+      progress: createInitialProgress(),
+      currentKana: "あ",
+      stage: "intro",
+    });
   });
 
   it("状態と保存進捗を変更せずに新しい状態を返す", () => {
@@ -172,5 +191,24 @@ describe("学習状態機械", () => {
 
     expect(selectRoute(initial)).toEqual({ kind: "soundGate" });
     expect(selectRoute(started.progress)).toEqual({ kind: "kanaLesson", character: "あ" });
+  });
+
+  it("あを終えて未体験のいへ進むと庭へ戻る", () => {
+    const started = reduceLesson(stateAt("あ", "intro"), { type: "START" });
+    const reward = {
+      ...started,
+      progress: { ...started.progress, stage: "reward" as const },
+      stage: "reward" as const,
+    };
+    const next = reduceLesson(reward, { type: "CONTINUE" });
+
+    expect(next.currentKana).toBe("い");
+    expect(selectRoute(next.progress)).toEqual({ kind: "garden" });
+  });
+
+  it("途中再開で現在文字を見た履歴があれば文字レッスンを返す", () => {
+    const resumed = reduceLesson(stateAt("く", "intro"), { type: "START" });
+
+    expect(selectRoute(resumed.progress)).toEqual({ kind: "kanaLesson", character: "く" });
   });
 });
