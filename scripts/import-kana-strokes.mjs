@@ -25,7 +25,7 @@ const BASIC_WRITING_SEQUENCE = "あいうえおかきくけこさしすせそた
 /** 単語教材の濁音・半濁音・促音・拗音で使用する追加文字。 */
 const ADVANCED_WRITING_CHARACTERS = Object.freeze([
   "が", "ぎ", "ご", "ざ", "ぞ", "だ", "で", "ど", "ば", "ぶ",
-  "べ", "ぼ", "ぱ", "ぴ", "ぷ", "っ", "ゃ", "ゅ", "ょ",
+  "べ", "ぼ", "ぱ", "ぴ", "ぷ", "ぽ", "っ", "ゃ", "ゅ", "ょ",
 ]);
 
 const WRITING_CHARACTERS = Object.freeze([
@@ -260,7 +260,7 @@ function projectNotice() {
     "",
     "Changes in this project",
     "-----------------------",
-    "- Extracted the 46 basic hiragana and 19 additional word-writing characters.",
+    "- Extracted the 46 basic hiragana and 20 additional word-writing characters.",
     "- Resampled every ordered stroke to exactly 48 points by arc length.",
     "- Normalised each character template with a shared scale, centred short-side padding, and a 0..1 coordinate system.",
     "- Rounded generated point coordinates to four decimal places.",
@@ -285,7 +285,7 @@ function thirdPartyNotice() {
     "",
     `Source retrieval URL: ${RAW_BASE_URL}/kana-data/<codepoint>.json`,
     "",
-    "This project extracted 46 basic hiragana and 19 additional word-writing characters, resampled every ordered stroke to 48 points by arc length, normalised each character template with a shared scale and centred short-side padding into a 0..1 coordinate system, and rounded generated point coordinates to four decimal places. Character identity, stroke order, direction, and `isCurl` are preserved, including source `direction.angle: null` values for closed loops.",
+    "This project extracted 46 basic hiragana and 20 additional word-writing characters, resampled every ordered stroke to 48 points by arc length, normalised each character template with a shared scale and centred short-side padding into a 0..1 coordinate system, and rounded generated point coordinates to four decimal places. Character identity, stroke order, direction, and `isCurl` are preserved, including source `direction.angle: null` values for closed loops.",
     "",
     "The generated stroke data is distributed under [Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)](https://creativecommons.org/licenses/by-sa/3.0/). The upstream LICENSE and this project's attribution notice are available at `public/licenses/fude-kana-data/`.",
     "",
@@ -297,8 +297,8 @@ async function main() {
   if (BASIC_WRITING_CHARACTERS.length !== 46 || BASIC_WRITING_CHARACTERS.join("") !== BASIC_WRITING_SEQUENCE) {
     throw new Error("Basic writing characters must match the fixed 46-character gojuon order");
   }
-  if (WRITING_CHARACTERS.length !== 65 || new Set(WRITING_CHARACTERS).size !== 65) {
-    throw new Error("Writing character set must contain exactly 65 unique characters");
+  if (WRITING_CHARACTERS.length !== 66 || new Set(WRITING_CHARACTERS).size !== 66) {
+    throw new Error("Writing character set must contain exactly 66 unique characters");
   }
   const filenames = WRITING_CHARACTERS.map(codepointFilename);
   if (new Set(filenames).size !== filenames.length) {

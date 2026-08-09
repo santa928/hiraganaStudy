@@ -13,7 +13,7 @@ Licence URL: https://creativecommons.org/licenses/by-sa/3.0/
 
 Changes in this project
 -----------------------
-- Extracted the 46 basic hiragana and 19 additional word-writing characters.
+- Extracted the 46 basic hiragana and 20 additional word-writing characters.
 - Resampled every ordered stroke to exactly 48 points by arc length.
 - Normalised each character template with a shared scale, centred short-side padding, and a 0..1 coordinate system.
 - Rounded generated point coordinates to four decimal places.

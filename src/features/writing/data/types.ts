@@ -4,10 +4,10 @@ import type { KanaCharacter } from "../../learning/content/types";
 /** 単語コースの書字で追加で使用する濁音・半濁音・促音・拗音。 */
 export const ADVANCED_WRITING_CHARACTERS = [
   "が", "ぎ", "ご", "ざ", "ぞ", "だ", "で", "ど", "ば", "ぶ",
-  "べ", "ぼ", "ぱ", "ぴ", "ぷ", "っ", "ゃ", "ゅ", "ょ",
+  "べ", "ぼ", "ぱ", "ぴ", "ぷ", "ぽ", "っ", "ゃ", "ゅ", "ょ",
 ] as const;
 
-/** 書字テンプレートを持つ基本46文字と単語用19文字の固定集合。 */
+/** 書字テンプレートを持つ基本46文字と単語用20文字の固定集合。 */
 export const WRITING_CHARACTERS = [
   ...KANA_ORDER,
   ...ADVANCED_WRITING_CHARACTERS,

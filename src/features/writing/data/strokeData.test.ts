@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { KANA_ORDER } from "../../learning/content/kana";
+import { WORD_ENTRIES } from "../../learning/content/words";
 import {
   ADVANCED_WRITING_CHARACTERS,
   WRITING_CHARACTERS,
   loadStrokeTemplate,
   type StrokeTemplate,
+  type WritingCharacter,
 } from "./types";
 import sourceLicense from "../../../../public/licenses/fude-kana-data/LICENSE?raw";
 import sourceNotice from "../../../../public/licenses/fude-kana-data/NOTICE?raw";
@@ -24,6 +26,7 @@ const EXPECTED_GENERATED_FILES: Readonly<Record<string, string>> = {
   "が": "0304c.json", "ぎ": "0304e.json", "ご": "03054.json", "ざ": "03056.json", "ぞ": "0305e.json",
   "だ": "03060.json", "で": "03067.json", "ど": "03069.json", "ば": "03070.json", "ぶ": "03076.json",
   "べ": "03079.json", "ぼ": "0307c.json", "ぱ": "03071.json", "ぴ": "03074.json", "ぷ": "03077.json",
+  "ぽ": "0307d.json",
   "っ": "03063.json", "ゃ": "03083.json", "ゅ": "03085.json", "ょ": "03087.json",
 };
 
@@ -75,6 +78,7 @@ const EXPECTED_RAW_JSON_SHA256: Readonly<Record<string, string>> = {
   "03079.json": "1f126d23619ef61ce6c09601824b9cfdf243d34cf8acdff7d1d106995e2f87a3",
   "0307b.json": "e8d8d871d45236942302b00ebbc6b1a068d91afe1707b297c7f6dea9eed338e6",
   "0307c.json": "4bed5c094f2eec3c506a485bb56621e4fc5e01c7f7ca6f3292a40a0a73775288",
+  "0307d.json": "6878c35b1c1044ca3cf736c4d33d43fc39950481c758d635d818dd4e5e34dfc4",
   "0307e.json": "9721535d6e3789ace70cc6ef365a479f86e8d749a6ef2a5fa2340b1dcd9dc9ad",
   "0307f.json": "a0a3d9102f5e1e379f492db6261182e569cb7df4cf084d27c83c86ede15baeb7",
   "03080.json": "664219934656f28d3eda0d86a87ae6de933f5273ee004f75a9e0d70e612a4533",
@@ -167,13 +171,13 @@ async function sha256(value: string): Promise<string> {
 }
 
 describe("書き順テンプレート", () => {
-  it("基本46文字と単語用19文字の65件を重複なく公開する", () => {
+  it("基本46文字と単語用20文字の66件を重複なく公開する", () => {
     expect(ADVANCED_WRITING_CHARACTERS).toEqual([
       "が", "ぎ", "ご", "ざ", "ぞ", "だ", "で", "ど", "ば", "ぶ",
-      "べ", "ぼ", "ぱ", "ぴ", "ぷ", "っ", "ゃ", "ゅ", "ょ",
+      "べ", "ぼ", "ぱ", "ぴ", "ぷ", "ぽ", "っ", "ゃ", "ゅ", "ょ",
     ]);
     expect(WRITING_CHARACTERS).toEqual([...KANA_ORDER, ...ADVANCED_WRITING_CHARACTERS]);
-    expect(new Set(WRITING_CHARACTERS)).toHaveLength(65);
+    expect(new Set(WRITING_CHARACTERS)).toHaveLength(66);
   });
 
   it("固定された基本46文字順を教材と書字テンプレートで共有する", () => {
@@ -181,14 +185,14 @@ describe("書き順テンプレート", () => {
     expect(WRITING_CHARACTERS.slice(0, 46).join("")).toBe(BASIC_WRITING_SEQUENCE);
   });
 
-  it("対象65文字だけの5桁小文字codepoint JSONを生成する", () => {
+  it("対象66文字だけの5桁小文字codepoint JSONを生成する", () => {
     const generatedFileNames = Object.keys(generatedModules)
       .map((path) => path.split("/").at(-1))
       .sort();
     const expectedFileNames = Object.values(EXPECTED_GENERATED_FILES).sort();
 
     expect(generatedFileNames).toEqual(expectedFileNames);
-    expect(Object.keys(EXPECTED_GENERATED_FILES)).toHaveLength(65);
+    expect(Object.keys(EXPECTED_GENERATED_FILES)).toHaveLength(66);
   });
 
   it("各生成ファイルは対応文字の48点ストロークを持つ", () => {
@@ -218,7 +222,7 @@ describe("書き順テンプレート", () => {
     expect(horizontal.width / horizontal.height).toBeCloseTo(1.8661, 3);
   });
 
-  it("65件の生成JSON raw bytesは独立した固定SHA-256と一致する", async () => {
+  it("66件の生成JSON raw bytesは独立した固定SHA-256と一致する", async () => {
     const expectedFilenames = Object.values(EXPECTED_GENERATED_FILES).sort();
     expect(Object.keys(EXPECTED_RAW_JSON_SHA256).sort()).toEqual(expectedFilenames);
 
@@ -227,6 +231,15 @@ describe("書き順テンプレート", () => {
       expect(content).toBeDefined();
       const hash = await sha256(content);
       expect(hash).toBe(EXPECTED_RAW_JSON_SHA256[filename]);
+    }
+  });
+
+  it("60語の全writingCellsは書字テンプレートとしてloaderから取得できる", () => {
+    const writingCharacters = new Set<WritingCharacter>(WRITING_CHARACTERS);
+
+    for (const cell of WORD_ENTRIES.flatMap((entry) => entry.writingCells)) {
+      expect(writingCharacters.has(cell as WritingCharacter)).toBe(true);
+      expectValidTemplate(loadStrokeTemplate(cell as WritingCharacter), cell);
     }
   });
 
