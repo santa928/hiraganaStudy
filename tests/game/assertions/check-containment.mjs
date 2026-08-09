@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 
 import { createProgressFixture } from "../run-scenarios.mjs";
+import { waitForVisualAssets } from "./wait-for-visuals.mjs";
 
 const FALLBACK_KEY = "hiragana-no-niwa:progress:v1";
 const VIEWPORTS = [
@@ -142,7 +143,7 @@ async function measureViewport(browser, options, viewport, errors) {
   await openAuditPage(page, options.url, viewport.name);
   await page.getByRole("button", { name: "つづきを あそぶ", exact: true }).click();
   await page.getByTestId("lesson-stage").waitFor({ state: "visible" });
-  await page.waitForFunction(() => [...document.images].every((image) => image.complete && image.naturalWidth > 0));
+  const visualAssets = await waitForVisualAssets(page);
 
   const metrics = await page.evaluate(() => {
     const toRect = (element) => {
@@ -211,6 +212,7 @@ async function measureViewport(browser, options, viewport, errors) {
   const issues = findContainmentIssues(metrics);
   if (metrics.guideToBodyGap < 8 - 0.5) issues.push(`案内と教材のgap不足: ${rounded(metrics.guideToBodyGap)}px`);
   if (!metrics.imagesReady) issues.push("画像decode未完了");
+  if (visualAssets.backgroundUrls.length === 0) issues.push("CSS背景画像がありません");
   if (metrics.choiceImageCount !== 0) issues.push(`文字選択肢内の画像: ${metrics.choiceImageCount}`);
   if (metrics.character.height <= metrics.illustration.height) {
     issues.push(`問題文字がillustration以下: ${rounded(metrics.character.height)} <= ${rounded(metrics.illustration.height)}`);
@@ -238,6 +240,7 @@ async function measureWritingPerformance(browser, options, errors) {
   await page.getByRole("button", { name: "つづきを あそぶ", exact: true }).click();
   const canvas = page.locator("canvas").last();
   await canvas.waitFor({ state: "visible" });
+  await waitForVisualAssets(page);
   await page.evaluate(() => {
     const target = document.querySelector("canvas");
     if (!(target instanceof HTMLCanvasElement)) throw new Error("書字canvasがありません");

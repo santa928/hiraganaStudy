@@ -6,11 +6,20 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { analyzeWritingSamples, findContainmentIssues } from "./assertions/check-containment.mjs";
+import { backgroundImageUrl } from "./assertions/wait-for-visuals.mjs";
 import { createProgressFixture, loadScenario } from "./run-scenarios.mjs";
 
 const REPOSITORY_ROOT = resolve(process.cwd());
 
 describe("完成版browser監査の固定scenario", () => {
+  it("CSS背景のurlを画像decode待機の対象として抽出する", () => {
+    expect(backgroundImageUrl('url("https://example.test/garden-background.webp")'))
+      .toBe("https://example.test/garden-background.webp");
+    expect(backgroundImageUrl("url('/hiraganaStudy/assets/world/garden-background.webp')"))
+      .toBe("/hiraganaStudy/assets/world/garden-background.webp");
+    expect(backgroundImageUrl("none")).toBeNull();
+  });
+
   it("初回・書字・45/46解放の3 scenarioを機械読取できる", async () => {
     const scenarios = await Promise.all([
       "first-kana.json",

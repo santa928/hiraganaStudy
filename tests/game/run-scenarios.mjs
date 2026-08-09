@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 
 import { chromium } from "playwright";
 
+import { waitForVisualAssets } from "./assertions/wait-for-visuals.mjs";
+
 const KANA_ORDER = [..."あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん"];
 const WORDS = [
   "いえ", "かお", "かき", "かさ", "くし", "こま", "さる", "しか", "すし", "たこ", "つき", "なす",
@@ -93,12 +95,6 @@ async function readGameState(page) {
   return JSON.parse(raw);
 }
 
-/** 読込済み画像だけを証跡に残すため、decode可能になるまで待つ。 */
-async function waitForImages(page) {
-  await page.waitForFunction(() => [...document.images].every((image) => image.complete && image.naturalWidth > 0), null, { timeout: 10_000 });
-  await page.evaluate(async () => Promise.all([...document.images].map((image) => image.decode?.().catch(() => undefined))));
-}
-
 /** canvasへ実pointer列を送り、次操作buttonが有効になるまで待つ。 */
 async function drawStroke(page) {
   const canvas = page.locator("canvas").last();
@@ -147,7 +143,7 @@ async function executeStep(page, step, sessionOutput, stateHistory) {
       return Object.entries(expected).every(([key, value]) => state[key] === value);
     }, Object.fromEntries(Object.entries(step).filter(([key]) => key !== "action")), { timeout: 10_000 });
   } else if (step.action === "capture") {
-    await waitForImages(page);
+    await waitForVisualAssets(page);
     const path = join(sessionOutput, `${step.name}.png`);
     await page.screenshot({ path, fullPage: false });
   } else {
