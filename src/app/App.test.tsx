@@ -67,7 +67,8 @@ describe("App", () => {
 
     await userEvent.setup().click(await screen.findByRole("button", { name: "ことばの にわへ" }));
     expect(await screen.findByTestId("word-garden")).toBeVisible();
-    expect(audio.speak).toHaveBeenCalledWith("ことばの にわへ いってみよう", { interrupt: true });
+    expect(audio.speak).toHaveBeenCalledOnce();
+    expect(audio.speak).toHaveBeenCalledWith("みどりの じょうろを さわって、ことばを そだてよう", { interrupt: true });
     vi.mocked(audio.cancel).mockClear();
     await userEvent.setup().click(screen.getByRole("button", { name: "もじの にわへ" }));
     expect(await screen.findByTestId("garden-screen")).toBeVisible();

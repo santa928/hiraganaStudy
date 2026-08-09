@@ -2,6 +2,7 @@ import { KANA_ORDER, type ContentIssue, type KanaEntry, type WordEntry, type Wor
 
 const STAGES: readonly WordStage[] = ["W1", "W2", "W3", "W4", "W5"];
 const VOICED_OR_SEMIVOICED = /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ]/;
+const SOKUON = /っ/;
 const SMALL_Y = /[ゃゅょ]/;
 
 /** 文字順、重複、選択肢、特殊用法の欠落を機械検査する。 */
@@ -61,7 +62,7 @@ export function validateWordEntries(entries: readonly WordEntry[]): ContentIssue
     }
     const invalidStage = (entry.stage === "W1" && (!/^[あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん]{2}$/.test(entry.text)))
       || (entry.stage === "W2" && ((entry.text.length < 3 && entry.text !== "いぬ") || /[っゃゅょ]/.test(entry.text) || (VOICED_OR_SEMIVOICED.test(entry.text) && entry.text !== "えんぴつ" && entry.text !== "うさぎ")))
-      || (entry.stage === "W3" && (!VOICED_OR_SEMIVOICED.test(entry.text) || (SMALL_Y.test(entry.text) && entry.text !== "でんしゃ")))
+      || (entry.stage === "W3" && (!VOICED_OR_SEMIVOICED.test(entry.text) || SOKUON.test(entry.text) || (SMALL_Y.test(entry.text) && entry.text !== "でんしゃ")))
       || (entry.stage === "W4" && (!entry.text.includes("っ") || SMALL_Y.test(entry.text)))
       || (entry.stage === "W5" && !SMALL_Y.test(entry.text));
     if (invalidStage) issues.push({ code: "invalid-word-stage", item: entry.id });

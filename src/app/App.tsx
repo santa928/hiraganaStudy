@@ -187,8 +187,6 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
       return;
     }
     if (route.kind === "wordGarden") {
-      audio.cancel();
-      if (state.progress.settings.speech) void audio.speak("ことばの にわへ いってみよう", { interrupt: true });
       setScreen("wordGarden");
       return;
     }
@@ -274,7 +272,7 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
 
   if (isLoading) return <main className="app-shell" data-testid="app-loading" aria-busy="true" />;
   if (screen === "parent") return <ParentDashboard progress={state.progress} environment={environment} onSettingsChange={changeSettings} onReset={reset} onClose={() => setScreen("garden")} />;
-  if (screen === "wordGarden") return <WordGardenScreen progress={state.progress} onStart={(wordId) => { setWordReviewMode(false); setActiveWordId(wordId); setScreen("wordLesson"); }} onReview={(wordId) => { setWordReviewMode(true); setActiveWordId(wordId); setScreen("wordLesson"); }} onBackToGarden={() => { audio.cancel(); setActiveWordId(null); setWordReviewMode(false); setScreen("garden"); }} />;
+  if (screen === "wordGarden") return <WordGardenScreen progress={state.progress} audio={audio} onStart={(wordId) => { setWordReviewMode(false); setActiveWordId(wordId); setScreen("wordLesson"); }} onReview={(wordId) => { setWordReviewMode(true); setActiveWordId(wordId); setScreen("wordLesson"); }} onBackToGarden={() => { setActiveWordId(null); setWordReviewMode(false); setScreen("garden"); }} />;
   if (screen === "wordLesson" && activeWordId) return <WordLessonScreen progress={state.progress} wordId={activeWordId} audio={audio} reviewMode={wordReviewMode} onSelected={(wordId) => dispatch({ type: "COMPLETE_WORD_SELECTION", wordId })} onArranged={(wordId) => dispatch({ type: "COMPLETE_WORD_ARRANGE", wordId })} onWritten={completeWordWriting} onReturnToGarden={() => { audio.cancel(); setActiveWordId(null); setWordReviewMode(false); setScreen("wordGarden"); }} />;
   if (screen === "rowReview") return <RowReviewScreen state={state} dispatch={handleMainDispatch} audio={audio} />;
   if (screen === "garden") return <GardenScreen progress={state.progress} resumeRoute={route} onContinue={continueFromGarden} onReview={beginReview} onOpenParent={() => setScreen("parent")} />;

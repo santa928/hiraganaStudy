@@ -1,3 +1,7 @@
+import { useEffect } from "react";
+
+import type { AudioGuide } from "../../platform/audio/AudioGuide";
+import { getWorldIllustration } from "../learning/content/assetCatalog";
 import { WORD_ENTRIES } from "../learning/content/words";
 import type { WordStage } from "../learning/content/types";
 import type { LearningProgress } from "../learning/model/types";
@@ -6,6 +10,7 @@ import "./WordLesson.css";
 /** ことばの花壇へ渡す、保存進捗と開始・復習操作。 */
 export interface WordGardenScreenProps {
   readonly progress: LearningProgress;
+  readonly audio: AudioGuide;
   readonly onStart: (wordId: string) => void;
   readonly onReview: (wordId: string) => void;
   readonly onBackToGarden: () => void;
@@ -32,9 +37,26 @@ export function findNextWordId(progress: LearningProgress): string | null {
 }
 
 /** 5段階のことばの花壇。数値スコアではなく、育った語だけを復習口にする。 */
-export function WordGardenScreen({ progress, onStart, onReview, onBackToGarden }: WordGardenScreenProps): React.JSX.Element {
+export function WordGardenScreen({ progress, audio, onStart, onReview, onBackToGarden }: WordGardenScreenProps): React.JSX.Element {
   const nextWordId = findNextWordId(progress);
   const nextWord = WORD_ENTRIES.find((word) => word.id === nextWordId);
+  const wateringCan = getWorldIllustration("watering-can");
+
+  useEffect(() => {
+    if (!progress.settings.speech || nextWordId === null) {
+      audio.cancel();
+      return undefined;
+    }
+    void audio.speak("みどりの じょうろを さわって、ことばを そだてよう", { interrupt: true }).catch(() => undefined);
+    return () => audio.cancel();
+  }, [audio, nextWordId, progress.settings.speech]);
+
+  /** 庭の案内を止めてから、対象語の一問集中画面へ移る。 */
+  const startNextWord = (): void => {
+    if (nextWordId === null) return;
+    audio.cancel();
+    onStart(nextWordId);
+  };
 
   return <main className="wordGarden" data-testid="word-garden" data-layout="word-garden-root">
     <header className="wordGarden__header"><p>ことばの にわ</p><button className="wordGarden__back" type="button" onClick={onBackToGarden}>もじの にわへ</button></header>
@@ -47,7 +69,7 @@ export function WordGardenScreen({ progress, onStart, onReview, onBackToGarden }
       </section>)}
     </section>
     <footer className="wordGarden__footer" data-layout="word-garden-cta">
-      {nextWordId ? <button className="wordGarden__start" type="button" onClick={() => onStart(nextWordId)}>ことばを そだてよう</button> : <p className="wordGarden__complete">ことばの にわが さきました</p>}
+      {nextWordId ? <button className="wordGarden__start" type="button" data-guide={progress.settings.reducedMotion ? undefined : "true"} onClick={startNextWord}><img className="wordGarden__startIcon" src={wateringCan.src} alt="" aria-hidden="true" width={wateringCan.width} height={wateringCan.height} /><span>ことばを そだてよう</span></button> : <p className="wordGarden__complete">ことばの にわが さきました</p>}
     </footer>
   </main>;
 }

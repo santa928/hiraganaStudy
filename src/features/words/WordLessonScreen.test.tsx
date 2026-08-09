@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createInitialProgress } from "../learning/model/reducer";
 import { WordLessonScreen } from "./WordLessonScreen";
@@ -8,6 +8,10 @@ import { WordLessonScreen } from "./WordLessonScreen";
 const audio = { cancel: vi.fn(), getStatus: () => "visual-only" as const, unlock: vi.fn().mockResolvedValue("visual-only"), speak: vi.fn().mockResolvedValue(undefined) };
 
 describe("WordLessonScreen", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("完了語の復習は選ぶ・並べる・書くを保存変更なしで通る", async () => {
     const user = userEvent.setup();
     const initial = createInitialProgress();
@@ -41,5 +45,19 @@ describe("WordLessonScreen", () => {
     const card = screen.getByTestId("word-choice").querySelector("[data-layout='word-card']") as HTMLElement;
     expect(within(card).queryByText("いえ")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "いえ" })).toHaveLength(1);
+  });
+
+  it("並べ終えた案内音声を止めてから書字へ進む", async () => {
+    const user = userEvent.setup();
+    const initial = createInitialProgress();
+    const progress = { ...initial, words: { ...initial.words, "w1-01": { selected: true, arranged: false, writingTried: false } } };
+    const onArranged = vi.fn();
+    render(<WordLessonScreen progress={progress} wordId="w1-01" audio={audio} onSelected={vi.fn()} onArranged={onArranged} onWritten={vi.fn()} onReturnToGarden={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "い" }));
+    await user.click(screen.getByRole("button", { name: "え" }));
+
+    expect(audio.cancel).toHaveBeenCalledOnce();
+    expect(onArranged).toHaveBeenCalledWith("w1-01");
   });
 });

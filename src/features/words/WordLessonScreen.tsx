@@ -48,10 +48,17 @@ export function WordLessonScreen({ progress, wordId, audio, onSelected, onArrang
   const step = reviewMode ? reviewStep : selectWordStep(progress, wordId);
   const speechEnabled = progress.settings.speech;
 
+  /** 並べ方の案内を次画面へ持ち越さず、書字段階だけを開始する。 */
+  const completeArrange = (): void => {
+    audio.cancel();
+    if (reviewMode) setReviewStep("writing");
+    else onArranged(wordId);
+  };
+
   return <main className="wordLesson" data-testid="word-lesson" data-word-step={step}>
     <header className="wordLesson__header"><p>ことばを そだてよう</p><button className="wordLesson__back" type="button" aria-label="ことばの にわへ もどる" onClick={onReturnToGarden}>にわ</button></header>
     {step === "choice" ? <WordChoiceStep word={word} choices={createWordChoices(wordId)} audio={audio} speechEnabled={speechEnabled} reducedMotion={progress.settings.reducedMotion} onComplete={() => reviewMode ? setReviewStep("arrange") : onSelected(wordId)} /> : null}
-    {step === "arrange" ? <WordArrangeStep word={word.text} reducedMotion={progress.settings.reducedMotion} onGuide={() => { if (speechEnabled) void audio.speak("さいしょの もじから おいてみよう", { interrupt: true }); }} onComplete={() => reviewMode ? setReviewStep("writing") : onArranged(wordId)} /> : null}
+    {step === "arrange" ? <WordArrangeStep word={word.text} reducedMotion={progress.settings.reducedMotion} onGuide={() => { if (speechEnabled) void audio.speak("さいしょの もじから おいてみよう", { interrupt: true }); }} onComplete={completeArrange} /> : null}
     {step === "writing" ? <WordWritingStep cells={word.writingCells} onComplete={() => reviewMode ? setReviewStep("complete") : onWritten(wordId)} /> : null}
     {step === "complete" ? <section className="wordLesson__arrange"><p>{word.text} の はなが さいたよ</p><button className="wordLesson__next" type="button" onClick={onReturnToGarden}>ことばの にわへ</button></section> : null}
   </main>;

@@ -23,4 +23,12 @@ describe("単語教材", () => {
     expect(WORD_ENTRIES.find((entry) => entry.text === "きょうりゅう")?.writingCells).toEqual(["き", "ょ", "う", "り", "ゅ", "う"]);
     expect(validateWordEntries(WORD_ENTRIES)).toEqual([]);
   });
+
+  it("W3では濁音があっても促音を許可しない", () => {
+    const invalidEntries = WORD_ENTRIES.map((entry) => entry.id === "w3-01"
+      ? { ...entry, text: "がっぽ", writingCells: ["が", "っ", "ぽ"] }
+      : entry);
+
+    expect(validateWordEntries(invalidEntries)).toContainEqual({ code: "invalid-word-stage", item: "w3-01" });
+  });
 });
