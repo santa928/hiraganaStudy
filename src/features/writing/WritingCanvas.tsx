@@ -39,7 +39,7 @@ declare global {
 }
 
 const FRAME_INTERVAL = 1000 / 30;
-const FRAME_EPSILON = 0.5;
+const DEADLINE_TOLERANCE_RATIO = 0.501;
 const MAX_DPR = 3;
 const PERFORMANCE_MARK_LIMIT = 32;
 const advanceListeners = new Map<symbol, (milliseconds: number) => void>();
@@ -89,6 +89,13 @@ function appendPoint(points: WritingPoint[], point: WritingPoint): void {
 function canvasDpr(): number {
   const dpr = window.devicePixelRatio;
   return Number.isFinite(dpr) && dpr > 0 ? Math.min(MAX_DPR, Math.max(1, dpr)) : 1;
+}
+
+/** 現在の書字段階と矛盾しない、読み上げ環境向けの標準書字面名を返す。 */
+function defaultAriaLabel(character: string, mode: WritingMode): string {
+  if (mode === "copyWithModel") return `おてほんを みて ${character} を かこう`;
+  if (mode === "freeWrite") return `じぶんで ${character} を かこう`;
+  return `${character} を なぞろう`;
 }
 
 /** Pointer captureの開始に失敗した場合でも、書字面を操作不能状態にしない。 */
@@ -149,7 +156,8 @@ export function WritingCanvas({ template, mode, resetKey, disabled = false, onCh
   const activeStrokeRef = useRef<WritingPoint[] | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const frameRef = useRef<number | null>(null);
-  const lastPaintRef = useRef(Number.NEGATIVE_INFINITY);
+  const lastRafTimeRef = useRef<number | null>(null);
+  const nextPaintDeadlineRef = useRef<number | null>(null);
   const sizeRef = useRef({ width: 0, height: 0 });
   const [guideTime, setGuideTime] = useState(0);
   const [successTime, setSuccessTime] = useState(0);
@@ -158,11 +166,22 @@ export function WritingCanvas({ template, mode, resetKey, disabled = false, onCh
     if (frameRef.current !== null) return;
     frameRef.current = window.requestAnimationFrame((timestamp) => {
       frameRef.current = null;
-      if (timestamp - lastPaintRef.current + FRAME_EPSILON < FRAME_INTERVAL) {
+      const previousRafTime = lastRafTimeRef.current;
+      const observedFrameInterval = previousRafTime === null || timestamp <= previousRafTime
+        ? FRAME_INTERVAL
+        : timestamp - previousRafTime;
+      lastRafTimeRef.current = timestamp;
+      const deadline = nextPaintDeadlineRef.current;
+      if (deadline !== null && timestamp + (observedFrameInterval * DEADLINE_TOLERANCE_RATIO) < deadline) {
         requestDraw();
         return;
       }
-      lastPaintRef.current = timestamp;
+      let nextDeadline = (deadline ?? timestamp) + FRAME_INTERVAL;
+      if (nextDeadline <= timestamp) {
+        const missedIntervals = Math.floor((timestamp - nextDeadline) / FRAME_INTERVAL) + 1;
+        nextDeadline += missedIntervals * FRAME_INTERVAL;
+      }
+      nextPaintDeadlineRef.current = nextDeadline;
       const start = performance.now();
       const canvas = canvasRef.current;
       const context = canvas?.getContext("2d");
@@ -209,6 +228,8 @@ export function WritingCanvas({ template, mode, resetKey, disabled = false, onCh
       frameRef.current = null;
       activeStrokeRef.current = null;
       activePointerIdRef.current = null;
+      lastRafTimeRef.current = null;
+      nextPaintDeadlineRef.current = null;
     };
   }, [resizeCanvas]);
 
@@ -228,6 +249,8 @@ export function WritingCanvas({ template, mode, resetKey, disabled = false, onCh
     committedRef.current = [];
     activeStrokeRef.current = null;
     activePointerIdRef.current = null;
+    lastRafTimeRef.current = null;
+    nextPaintDeadlineRef.current = null;
     setSuccessTime(0);
     requestDraw();
   // template object identityではなく、教材として異なる文字だけをreset契約にする。
@@ -312,7 +335,7 @@ export function WritingCanvas({ template, mode, resetKey, disabled = false, onCh
         ref={canvasRef}
         className="writingCanvas"
         role="application"
-        aria-label={ariaLabel ?? `${template.character} を なぞろう`}
+        aria-label={ariaLabel ?? defaultAriaLabel(template.character, mode)}
         aria-disabled={disabled || undefined}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

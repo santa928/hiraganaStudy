@@ -21,9 +21,10 @@ class ResizeObserverMock {
 }
 
 /** requestAnimationFrameを手動で進める小さなテスト時計を作る。 */
-function installAnimationFrame(): { flush: (time?: number) => void; restore: () => void } {
+function installAnimationFrame(): { flush: (time?: number) => void; currentTime: () => number; restore: () => void } {
   const callbacks = new Map<number, FrameRequestCallback>();
   let identifier = 0;
+  let currentTime = 0;
   const request = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
     identifier += 1;
     callbacks.set(identifier, callback);
@@ -35,15 +36,28 @@ function installAnimationFrame(): { flush: (time?: number) => void; restore: () 
 
   return {
     flush(time = 34): void {
+      currentTime = time;
       const current = [...callbacks.values()];
       callbacks.clear();
       current.forEach((callback) => callback(time));
     },
+    currentTime: (): number => currentTime,
     restore(): void {
       request.mockRestore();
       cancel.mockRestore();
     },
   };
+}
+
+/** RAFの時刻で実描画時刻を採取するCanvas contextを設置する。 */
+function installMeasuredCanvasContext(currentTime: () => number): { readonly paintTimes: number[]; readonly restore: () => void } {
+  const paintTimes: number[] = [];
+  const context = {
+    clearRect: vi.fn(() => paintTimes.push(currentTime())), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+    setTransform: vi.fn(), lineCap: "round", lineJoin: "round", strokeStyle: "", fillStyle: "", lineWidth: 1,
+  } as unknown as CanvasRenderingContext2D;
+  const spy = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+  return { paintTimes, restore: (): void => spy.mockRestore() };
 }
 
 /** 高refresh rateのframe時刻を順に流す。 */
@@ -87,6 +101,21 @@ describe("WritingCanvas", () => {
     act(() => animation.flush());
 
     expect(context).toHaveBeenCalled();
+    animation.restore();
+  });
+
+  it("modeに合う書字面名を出し、明示labelを優先する", () => {
+    installCanvasContext();
+    const animation = installAnimationFrame();
+    const { getByRole, rerender } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceWide" />);
+
+    expect(getByRole("application")).toHaveAccessibleName("あ を なぞろう");
+    rerender(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceNarrow" />);
+    expect(getByRole("application")).toHaveAccessibleName("あ を なぞろう");
+    rerender(<WritingCanvas template={loadStrokeTemplate("あ")} mode="copyWithModel" />);
+    expect(getByRole("application")).toHaveAccessibleName("おてほんを みて あ を かこう");
+    rerender(<WritingCanvas template={loadStrokeTemplate("あ")} mode="freeWrite" ariaLabel="あの じゆうれんしゅう" />);
+    expect(getByRole("application")).toHaveAccessibleName("あの じゆうれんしゅう");
     animation.restore();
   });
 
@@ -242,6 +271,24 @@ describe("WritingCanvas", () => {
     animation.restore();
   });
 
+  it("正常pointerup後のlost captureでは確定strokeと通知を保持する", () => {
+    installCanvasContext();
+    const animation = installAnimationFrame();
+    const onChange = vi.fn();
+    const onAttempt = vi.fn();
+    const { getByRole } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceWide" onChange={onChange} onAttempt={onAttempt} />);
+    const canvas = getByRole("application");
+    Object.assign(canvas, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() });
+
+    fireEvent(canvas, pointEvent("pointerdown", 15, 10, 10));
+    fireEvent(canvas, pointEvent("pointerup", 15, 30, 30));
+    fireEvent(canvas, pointEvent("lostpointercapture", 15, 30, 30));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0]).toHaveLength(1);
+    animation.restore();
+  });
+
   it("120Hzと144Hzでも30fpsを維持し、pending pointを次の描画で失わない", () => {
     const context = installCanvasContext();
     const animation = installAnimationFrame();
@@ -259,6 +306,34 @@ describe("WritingCanvas", () => {
     flushFrames(animation, [40.278, 47.222, 54.167, 61.111, 68.056]);
     expect(context.mock.results[0].value.clearRect).toHaveBeenCalledTimes(3);
     expect(context.mock.results[0].value.lineTo).toHaveBeenCalledWith(60, 60);
+    animation.restore();
+  });
+
+  it.each([75, 120, 144, 165])("%iHzの連続入力を約30fpsで描き、50ms未満に応答する", (refreshRate) => {
+    const animation = installAnimationFrame();
+    const measured = installMeasuredCanvasContext(animation.currentTime);
+    const { getByRole, unmount } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceWide" />);
+    const canvas = getByRole("application");
+    Object.defineProperty(canvas, "getBoundingClientRect", { value: () => new DOMRect(0, 0, 100, 100) });
+    Object.defineProperty(canvas.parentElement!, "getBoundingClientRect", { value: () => new DOMRect(0, 0, 100, 100) });
+    act(() => window.dispatchEvent(new Event("resize")));
+    flushFrames(animation, [0]);
+    measured.paintTimes.length = 0;
+    fireEvent(canvas, pointEvent("pointerdown", 30, 10, 10));
+    const interval = 1000 / refreshRate;
+    for (let time = interval; time <= 1000; time += interval) {
+      fireEvent(canvas, pointEvent("pointermove", 30, Math.min(90, time / 12), Math.min(90, time / 12)));
+      flushFrames(animation, [time]);
+    }
+
+    expect(measured.paintTimes.length).toBeGreaterThanOrEqual(29);
+    expect(measured.paintTimes.length).toBeLessThanOrEqual(31);
+    expect(measured.paintTimes[0]).toBeLessThan(50);
+    const gaps = measured.paintTimes.slice(1).map((time, index) => time - measured.paintTimes[index]);
+    expect(Math.max(...gaps)).toBeLessThan(50);
+    expect(measured.paintTimes.at(-1)! - 1000).toBeLessThanOrEqual(0);
+    unmount();
+    measured.restore();
     animation.restore();
   });
 
