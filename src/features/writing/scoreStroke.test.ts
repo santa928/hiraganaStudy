@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { jitter, reverseAndShift, templateFor } from "../../test/fixtures/strokes";
-import { scoreWriting } from "./scoreStroke";
+import { scoreWriting, selectWritingGuide } from "./scoreStroke";
 import { loadStrokeTemplate } from "./data/types";
 
 describe("緩やかな書字判定", () => {
@@ -42,6 +42,13 @@ describe("緩やかな書字判定", () => {
   });
 
   it("閾値どおりに補助段階を切り替える", () => {
+    expect(selectWritingGuide(0.6799, 1, true)).toBe("gentleGuide");
+    expect(selectWritingGuide(0.68, 0.55, true)).toBe("independent");
+    expect(selectWritingGuide(0.6801, 0.5501, true)).toBe("independent");
+    expect(selectWritingGuide(0.42, 0.55, true)).toBe("gentleGuide");
+    expect(selectWritingGuide(0.4199, 1, true)).toBe("strongGuide");
+    expect(selectWritingGuide(1, 0.4199, true)).toBe("strongGuide");
+    expect(selectWritingGuide(1, 1, false)).toBe("strongGuide");
     expect(scoreWriting(templateFor("あ"), loadStrokeTemplate("あ")).guide).toBe("independent");
   });
 });

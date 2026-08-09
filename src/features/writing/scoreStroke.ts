@@ -14,6 +14,20 @@ export interface WritingScore {
 
 const SAMPLE_COUNT = 32;
 
+/**
+ * 経路・方向・stroke数から、子どもへ表示しない次回補助段階を決める。
+ *
+ * 値は安全に0..1へ収める。境界は仕様どおり、path 0.68以上かつdirection
+ * 0.55以上でindependent、どちらかが0.42未満またはstroke数不一致でstrongGuide。
+ */
+export function selectWritingGuide(pathSimilarity: number, directionSimilarity: number, strokeCountMatch: boolean): WritingGuide {
+  const path = clamp(pathSimilarity);
+  const direction = clamp(directionSimilarity);
+  if (!strokeCountMatch || path < 0.42 || direction < 0.42) return "strongGuide";
+  if (path >= 0.68 && direction >= 0.55) return "independent";
+  return "gentleGuide";
+}
+
 /** 二点間のユークリッド距離を有限値として返す。 */
 function distance([firstX, firstY]: WritingPoint, [secondX, secondY]: WritingPoint): number {
   return Math.hypot(firstX - secondX, firstY - secondY);
@@ -83,11 +97,7 @@ export function scoreWriting(input: WritingStrokes, template: StrokeTemplate): W
 
   const pathSimilarity = clamp(paths / pairedCount);
   const direction = clamp(directions / pairedCount);
-  const guide: WritingGuide = !strokeCountMatch || pathSimilarity < 0.42 || direction < 0.42
-    ? "strongGuide"
-    : pathSimilarity >= 0.68 && direction >= 0.55
-      ? "independent"
-      : "gentleGuide";
+  const guide = selectWritingGuide(pathSimilarity, direction, strokeCountMatch);
 
   return {
     strokeCountMatch,

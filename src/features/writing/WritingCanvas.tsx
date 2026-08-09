@@ -18,8 +18,10 @@ export interface WritingAttempt {
 export interface WritingCanvasProps {
   /** 表示と緩やかな比較に使う、対象文字の生成済み書き順。 */
   readonly template: StrokeTemplate;
-  /** 太い道、細い道、見本、補助なしの順で表示を変える。 */
+  /** 太い道、細い道、外部見本つき白紙、補助なし白紙を切り替える。 */
   readonly mode: WritingMode;
+  /** 同じ文字・modeを明示的に最初から書き直すための識別子。 */
+  readonly resetKey?: string | number;
   /** 操作不可時はPointer Eventを奪わず、表示だけを保持する。 */
   readonly disabled?: boolean;
   /** 確定済みstrokeだけを正規化座標で通知する。 */
@@ -37,6 +39,7 @@ declare global {
 }
 
 const FRAME_INTERVAL = 1000 / 30;
+const FRAME_EPSILON = 0.5;
 const MAX_DPR = 3;
 const PERFORMANCE_MARK_LIMIT = 32;
 const advanceListeners = new Map<symbol, (milliseconds: number) => void>();
@@ -88,6 +91,27 @@ function canvasDpr(): number {
   return Number.isFinite(dpr) && dpr > 0 ? Math.min(MAX_DPR, Math.max(1, dpr)) : 1;
 }
 
+/** Pointer captureの開始に失敗した場合でも、書字面を操作不能状態にしない。 */
+function trySetPointerCapture(canvas: HTMLCanvasElement, pointerId: number): boolean {
+  if (typeof canvas.setPointerCapture !== "function") return true;
+  try {
+    canvas.setPointerCapture(pointerId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** releaseの端末例外を、確定済みstrokeの通知まで伝播させない。 */
+function tryReleasePointerCapture(canvas: HTMLCanvasElement, pointerId: number): void {
+  if (typeof canvas.releasePointerCapture !== "function") return;
+  try {
+    canvas.releasePointerCapture(pointerId);
+  } catch {
+    // Pointer Eventの終了済みcaptureでは例外になりうるため、確定処理を継続する。
+  }
+}
+
 /** Canvas上のstrokeを丸端・丸継ぎ手で描く。 */
 function drawStroke(context: CanvasRenderingContext2D, points: readonly WritingPoint[], width: number, height: number, lineWidth: number, color: string): void {
   if (points.length === 0) return;
@@ -103,12 +127,10 @@ function drawStroke(context: CanvasRenderingContext2D, points: readonly WritingP
 
 /** modeごとの庭らしい補助線を描く。 */
 function drawGuide(context: CanvasRenderingContext2D, template: StrokeTemplate, mode: WritingMode, width: number, height: number, guideTime: number): void {
-  if (mode === "freeWrite") return;
+  if (mode !== "traceWide" && mode !== "traceNarrow") return;
   const progress = 0.88 + (Math.sin(guideTime / 420) * 0.06);
-  const lineWidth = mode === "traceWide" ? Math.min(width, height) * 0.15
-    : mode === "traceNarrow" ? Math.min(width, height) * 0.075
-      : Math.min(width, height) * 0.045;
-  const color = mode === "copyWithModel" ? "rgba(48, 68, 106, 0.45)" : "rgba(136, 166, 128, 0.62)";
+  const lineWidth = mode === "traceWide" ? Math.min(width, height) * 0.15 : Math.min(width, height) * 0.075;
+  const color = "rgba(136, 166, 128, 0.62)";
   for (const stroke of template.strokes) {
     const limit = Math.max(1, Math.ceil(stroke.points.length * progress));
     drawStroke(context, stroke.points.slice(0, limit), width, height, lineWidth, color);
@@ -120,7 +142,7 @@ function drawGuide(context: CanvasRenderingContext2D, template: StrokeTemplate, 
  *
  * 筆跡は0..1座標で保持するため、portrait/landscapeのresizeやDPR変更後も形を保つ。
  */
-export function WritingCanvas({ template, mode, disabled = false, onChange, onAttempt, ariaLabel }: WritingCanvasProps): React.JSX.Element {
+export function WritingCanvas({ template, mode, resetKey, disabled = false, onChange, onAttempt, ariaLabel }: WritingCanvasProps): React.JSX.Element {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const committedRef = useRef<WritingPoint[][]>([]);
@@ -136,7 +158,7 @@ export function WritingCanvas({ template, mode, disabled = false, onChange, onAt
     if (frameRef.current !== null) return;
     frameRef.current = window.requestAnimationFrame((timestamp) => {
       frameRef.current = null;
-      if (timestamp - lastPaintRef.current < FRAME_INTERVAL) {
+      if (timestamp - lastPaintRef.current + FRAME_EPSILON < FRAME_INTERVAL) {
         requestDraw();
         return;
       }
@@ -200,6 +222,17 @@ export function WritingCanvas({ template, mode, disabled = false, onChange, onAt
     requestDraw();
   }, [guideTime, mode, requestDraw, successTime, template]);
 
+  useEffect(() => {
+    const activePointerId = activePointerIdRef.current;
+    if (activePointerId !== null && canvasRef.current) tryReleasePointerCapture(canvasRef.current, activePointerId);
+    committedRef.current = [];
+    activeStrokeRef.current = null;
+    activePointerIdRef.current = null;
+    setSuccessTime(0);
+    requestDraw();
+  // template object identityではなく、教材として異なる文字だけをreset契約にする。
+  }, [template.character, mode, resetKey]);
+
   /** coalesced eventsを含む現在pointerの位置をactive strokeへ追加する。 */
   const addPointerEvents = useCallback((event: React.PointerEvent<HTMLCanvasElement>): void => {
     const nativeEvent = event.nativeEvent;
@@ -214,7 +247,12 @@ export function WritingCanvas({ template, mode, disabled = false, onChange, onAt
     event.preventDefault();
     activePointerIdRef.current = event.pointerId;
     activeStrokeRef.current = [];
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (!trySetPointerCapture(event.currentTarget, event.pointerId)) {
+      activeStrokeRef.current = null;
+      activePointerIdRef.current = null;
+      requestDraw();
+      return;
+    }
     addPointerEvents(event);
     requestDraw();
   }, [addPointerEvents, disabled, requestDraw]);
@@ -235,7 +273,7 @@ export function WritingCanvas({ template, mode, disabled = false, onChange, onAt
     const stroke = activeStrokeRef.current;
     activeStrokeRef.current = null;
     activePointerIdRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    tryReleasePointerCapture(event.currentTarget, event.pointerId);
     committedRef.current = [...committedRef.current, stroke];
     const strokes = committedRef.current.map((current) => current.map(([x, y]) => [x, y] as const));
     onChange?.(strokes);
@@ -250,7 +288,15 @@ export function WritingCanvas({ template, mode, disabled = false, onChange, onAt
     if (activePointerIdRef.current !== event.pointerId) return;
     activeStrokeRef.current = null;
     activePointerIdRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    tryReleasePointerCapture(event.currentTarget, event.pointerId);
+    requestDraw();
+  }, [requestDraw]);
+
+  /** ブラウザ都合でcaptureを失った筆は確定せず破棄する。 */
+  const handleLostPointerCapture = useCallback((event: React.PointerEvent<HTMLCanvasElement>): void => {
+    if (activePointerIdRef.current !== event.pointerId) return;
+    activeStrokeRef.current = null;
+    activePointerIdRef.current = null;
     requestDraw();
   }, [requestDraw]);
 
@@ -260,6 +306,7 @@ export function WritingCanvas({ template, mode, disabled = false, onChange, onAt
       className={`writingCanvasSurface writingCanvasSurface--${mode}`}
       data-success={successTime > 0 ? "sprout" : "rest"}
       data-guide-time={guideTime}
+      data-requires-external-model={mode === "copyWithModel" ? "true" : undefined}
     >
       <canvas
         ref={canvasRef}
@@ -271,6 +318,7 @@ export function WritingCanvas({ template, mode, disabled = false, onChange, onAt
         onPointerMove={handlePointerMove}
         onPointerUp={finishStroke}
         onPointerCancel={handlePointerCancel}
+        onLostPointerCapture={handleLostPointerCapture}
       />
     </div>
   );

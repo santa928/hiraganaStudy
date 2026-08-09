@@ -46,6 +46,11 @@ function installAnimationFrame(): { flush: (time?: number) => void; restore: () 
   };
 }
 
+/** 高refresh rateのframe時刻を順に流す。 */
+function flushFrames(animation: ReturnType<typeof installAnimationFrame>, timestamps: readonly number[]): void {
+  act(() => timestamps.forEach((timestamp) => animation.flush(timestamp)));
+}
+
 /** Canvas 2D APIで検査する描画呼び出しだけを持つcontextを返す。 */
 function installCanvasContext(): ReturnType<typeof vi.spyOn> {
   const context = {
@@ -132,22 +137,29 @@ describe("WritingCanvas", () => {
   it("CSS寸法とDPR backing storeを分離し、resize後も書いたstrokeを保持する", () => {
     installCanvasContext();
     const animation = installAnimationFrame();
-    const originalObserver = globalThis.ResizeObserver;
-    Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: ResizeObserverMock });
-    Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 2 });
-    const { getByRole } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="freeWrite" />);
-    const canvas = getByRole("application") as HTMLCanvasElement;
-    Object.defineProperty(canvas.parentElement!, "getBoundingClientRect", { value: () => new DOMRect(0, 0, 120, 100) });
-    act(() => ResizeObserverMock.instances[0].trigger(canvas.parentElement!));
-    expect(canvas.width).toBe(240);
-    expect(canvas.height).toBe(200);
-    fireEvent(canvas, pointEvent("pointerdown", 8, 10, 10));
-    fireEvent(canvas, pointEvent("pointerup", 8, 30, 30));
-    act(() => ResizeObserverMock.instances[0].trigger(canvas.parentElement!));
-    act(() => animation.flush());
-    expect(canvas.width).toBe(240);
-    Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: originalObserver });
-    animation.restore();
+    const observerDescriptor = Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver");
+    const dprDescriptor = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
+    try {
+      Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: ResizeObserverMock });
+      Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 2 });
+      const { getByRole } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="freeWrite" />);
+      const canvas = getByRole("application") as HTMLCanvasElement;
+      Object.defineProperty(canvas.parentElement!, "getBoundingClientRect", { value: () => new DOMRect(0, 0, 120, 100) });
+      act(() => ResizeObserverMock.instances[0].trigger(canvas.parentElement!));
+      expect(canvas.width).toBe(240);
+      expect(canvas.height).toBe(200);
+      fireEvent(canvas, pointEvent("pointerdown", 8, 10, 10));
+      fireEvent(canvas, pointEvent("pointerup", 8, 30, 30));
+      act(() => ResizeObserverMock.instances[0].trigger(canvas.parentElement!));
+      act(() => animation.flush());
+      expect(canvas.width).toBe(240);
+    } finally {
+      if (observerDescriptor) Object.defineProperty(globalThis, "ResizeObserver", observerDescriptor);
+      else Reflect.deleteProperty(globalThis, "ResizeObserver");
+      if (dprDescriptor) Object.defineProperty(window, "devicePixelRatio", dprDescriptor);
+      else Reflect.deleteProperty(window, "devicePixelRatio");
+      animation.restore();
+    }
   });
 
   it("30fpsへbatchし、予算超過のframeだけbounded markerへ記録する", () => {
@@ -189,6 +201,90 @@ describe("WritingCanvas", () => {
     expect(() => act(() => hook?.(-1))).not.toThrow();
     first.unmount();
     expect(window.advanceTime).toBe(previous);
+    animation.restore();
+  });
+
+  it("capture例外とlost captureで未完strokeを破棄し、次のpointerで復帰する", () => {
+    installCanvasContext();
+    const animation = installAnimationFrame();
+    const onChange = vi.fn();
+    const { getByRole } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceWide" onChange={onChange} />);
+    const canvas = getByRole("application");
+    Object.assign(canvas, { setPointerCapture: vi.fn(() => { throw new Error("capture unavailable"); }) });
+
+    fireEvent(canvas, pointEvent("pointerdown", 10, 10, 10));
+    fireEvent(canvas, pointEvent("pointerup", 10, 30, 30));
+    expect(onChange).not.toHaveBeenCalled();
+    Object.assign(canvas, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() });
+    fireEvent(canvas, pointEvent("pointerdown", 11, 10, 10));
+    fireEvent(canvas, pointEvent("lostpointercapture", 11, 20, 20));
+    fireEvent(canvas, pointEvent("pointerup", 11, 30, 30));
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent(canvas, pointEvent("pointerdown", 12, 10, 10));
+    fireEvent(canvas, pointEvent("pointerup", 12, 30, 30));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    animation.restore();
+  });
+
+  it("release captureの例外後もstrokeを確定し、次のpointerを受け取る", () => {
+    installCanvasContext();
+    const animation = installAnimationFrame();
+    const onChange = vi.fn();
+    const { getByRole } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceWide" onChange={onChange} />);
+    const canvas = getByRole("application");
+    Object.assign(canvas, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn(() => { throw new Error("release unavailable"); }) });
+
+    fireEvent(canvas, pointEvent("pointerdown", 13, 10, 10));
+    fireEvent(canvas, pointEvent("pointerup", 13, 30, 30));
+    fireEvent(canvas, pointEvent("pointerdown", 14, 10, 10));
+    fireEvent(canvas, pointEvent("pointerup", 14, 30, 30));
+    expect(onChange).toHaveBeenCalledTimes(2);
+    animation.restore();
+  });
+
+  it("120Hzと144Hzでも30fpsを維持し、pending pointを次の描画で失わない", () => {
+    const context = installCanvasContext();
+    const animation = installAnimationFrame();
+    const { getByRole } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceWide" />);
+    const canvas = getByRole("application");
+    Object.defineProperty(canvas, "getBoundingClientRect", { value: () => new DOMRect(0, 0, 100, 100) });
+    Object.defineProperty(canvas.parentElement!, "getBoundingClientRect", { value: () => new DOMRect(0, 0, 100, 100) });
+    act(() => window.dispatchEvent(new Event("resize")));
+    flushFrames(animation, [0]);
+    fireEvent(canvas, pointEvent("pointerdown", 15, 10, 10));
+    fireEvent(canvas, pointEvent("pointermove", 15, 30, 30));
+    flushFrames(animation, [8.333, 16.667, 25, 33.333]);
+    expect(context.mock.results[0].value.clearRect).toHaveBeenCalledTimes(2);
+    fireEvent(canvas, pointEvent("pointermove", 15, 60, 60));
+    flushFrames(animation, [40.278, 47.222, 54.167, 61.111, 68.056]);
+    expect(context.mock.results[0].value.clearRect).toHaveBeenCalledTimes(3);
+    expect(context.mock.results[0].value.lineTo).toHaveBeenCalledWith(60, 60);
+    animation.restore();
+  });
+
+  it("stage/template/resetKeyの変更で筆跡を引き継がず、同じstageのrerenderでは保持する", () => {
+    installCanvasContext();
+    const animation = installAnimationFrame();
+    const onChange = vi.fn();
+    const { getByRole, rerender } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceWide" onChange={onChange} />);
+    const canvas = getByRole("application");
+    fireEvent(canvas, pointEvent("pointerdown", 16, 10, 10));
+    fireEvent(canvas, pointEvent("pointerup", 16, 30, 30));
+    rerender(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceWide" onChange={onChange} ariaLabel="あ" />);
+    fireEvent(canvas, pointEvent("pointerdown", 17, 40, 40));
+    fireEvent(canvas, pointEvent("pointerup", 17, 50, 50));
+    expect(onChange.mock.calls[1][0]).toHaveLength(2);
+    rerender(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceNarrow" onChange={onChange} />);
+    fireEvent(canvas, pointEvent("pointerdown", 18, 10, 10));
+    fireEvent(canvas, pointEvent("pointerup", 18, 20, 20));
+    expect(onChange.mock.calls[2][0]).toHaveLength(1);
+    rerender(<WritingCanvas template={loadStrokeTemplate("い")} mode="copyWithModel" onChange={onChange} resetKey="next" />);
+    expect(canvas.parentElement).toHaveAttribute("data-requires-external-model", "true");
+    fireEvent(canvas, pointEvent("pointerdown", 19, 10, 10));
+    rerender(<WritingCanvas template={loadStrokeTemplate("い")} mode="freeWrite" onChange={onChange} resetKey="next" />);
+    fireEvent(canvas, pointEvent("pointerdown", 20, 10, 10));
+    fireEvent(canvas, pointEvent("pointerup", 20, 20, 20));
+    expect(onChange.mock.calls[3][0]).toHaveLength(1);
     animation.restore();
   });
 });
