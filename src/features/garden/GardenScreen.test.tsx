@@ -1,0 +1,37 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+import { GardenScreen } from "./GardenScreen";
+import { createInitialProgress } from "../learning/model/reducer";
+
+describe("GardenScreen", () => {
+  it("完了した文字だけを復習できる花として表示し、じょうろで続きを呼び出す", async () => {
+    const user = userEvent.setup();
+    const progress = createInitialProgress();
+    const completed = {
+      ...progress,
+      kana: { ...progress.kana, あ: { ...progress.kana.あ, completedOnce: true } },
+    };
+    const onContinue = vi.fn();
+    const onReview = vi.fn();
+    render(<GardenScreen progress={completed} resumeRoute={{ kind: "kanaLesson", character: "い" }} onContinue={onContinue} onReview={onReview} onOpenParent={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "あ を もういちど" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "い を もういちど" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "つづきを あそぶ" }));
+    await user.click(screen.getByRole("button", { name: "あ を もういちど" }));
+    expect(onContinue).toHaveBeenCalledOnce();
+    expect(onReview).toHaveBeenCalledWith("あ");
+  });
+
+  it("完成花の画像が読めなくても文字花を残して再試行できる", async () => {
+    const user = userEvent.setup();
+    const progress = createInitialProgress();
+    const completed = { ...progress, kana: { ...progress.kana, あ: { ...progress.kana.あ, completedOnce: true } } };
+    render(<GardenScreen progress={completed} resumeRoute={{ kind: "kanaLesson", character: "あ" }} onContinue={vi.fn()} onReview={vi.fn()} onOpenParent={vi.fn()} />);
+    fireEvent.error(screen.getByRole("button", { name: "あ を もういちど" }).querySelector("img")!);
+    expect(screen.getByRole("button", { name: "イラストを もういちど よみこむ" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "イラストを もういちど よみこむ" }));
+    expect(screen.getByRole("button", { name: "あ を もういちど" })).toHaveTextContent("あ");
+  });
+});

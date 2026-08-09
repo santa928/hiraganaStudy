@@ -1,0 +1,25 @@
+.gardenScreen { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; block-size: 100dvh; gap: 16px; overflow: hidden; padding: max(env(safe-area-inset-top), var(--space-page)) max(env(safe-area-inset-right), var(--space-page)) max(env(safe-area-inset-bottom), var(--space-page)) max(env(safe-area-inset-left), var(--space-page)); background-color: var(--color-sky); background-position: center; background-size: cover; color: var(--color-ink-indigo); }
+.gardenScreen__header { display: flex; min-block-size: var(--touch-target-secondary); align-items: center; justify-content: space-between; gap: 12px; border: 3px solid var(--color-ink-indigo); border-radius: 24px; background: rgb(255 244 215 / 93%); padding: 4px 8px 4px 16px; }
+.gardenScreen__header p { margin: 0; font-weight: 800; }
+.parentGate { min-block-size: var(--touch-target-secondary); border: 2px solid var(--color-ink-indigo); border-radius: 18px; background: var(--color-paper-cream); color: var(--color-ink-indigo); cursor: pointer; padding-inline: 12px; }
+.gardenScreen__beds { display: grid; align-content: start; gap: 12px; overflow: auto; padding: 4px; }
+.gardenScreen__row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(8px, 2vw, 16px); }
+.kanaFlower { position: relative; display: grid; min-inline-size: 0; aspect-ratio: 1; place-items: center; border: 0; background: transparent; color: var(--color-ink-indigo); cursor: pointer; padding: 3px; }
+.kanaFlower--soil { cursor: default; }
+.kanaFlower--soil::before { inline-size: 58%; block-size: 28%; align-self: end; border: 3px solid #846042; border-radius: 50%; background: #b98758; box-shadow: inset 0 5px 0 rgb(91 57 36 / 22%); content: ""; }
+.kanaFlower--soil::after { position: absolute; inline-size: 10%; block-size: 24%; align-self: center; border: 3px solid var(--color-success); border-block-end: 0; border-radius: 100% 0 100% 0; content: ""; transform: translateY(10%) rotate(-35deg); }
+.kanaFlower__petals { position: absolute; inset: 8%; border: 3px solid var(--color-ink-indigo); border-radius: 50% 45% 50% 45%; background: radial-gradient(circle, #ffe69a 0 27%, #f59dab 29% 45%, #f8cf75 47% 66%, #f59dab 68%); box-shadow: 0 4px 0 rgb(35 51 95 / 18%); transform: rotate(-8deg); }
+.kanaFlower__character { position: relative; z-index: 1; display: grid; place-items: center; font-family: var(--font-kana); font-size: clamp(1.9rem, 8vw, 4.7rem); font-weight: 900; line-height: 1; text-shadow: 0 2px var(--color-paper-cream); }
+.kanaFlower__badge { position: absolute; z-index: 2; inset-inline-end: 1%; inset-block-end: 2%; display: grid; inline-size: 34%; aspect-ratio: 1; place-items: center; overflow: hidden; border: 2px solid var(--color-ink-indigo); border-radius: 50%; background: var(--color-paper-cream); }
+.kanaFlower__image { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.kanaFlower__fallback { display: grid; inline-size: 100%; block-size: 100%; place-items: center; background: #f7d76e; color: var(--color-ink-indigo); font-size: 1.1rem; font-weight: 900; }
+.gardenScreen__continue { display: grid; justify-items: center; padding-block-start: 4px; }
+.gardenScreen__watering { display: inline-flex; min-block-size: var(--touch-target-primary); align-items: center; justify-content: center; gap: 10px; border: 4px solid var(--color-ink-indigo); border-radius: 32px; background: var(--color-grass); box-shadow: 0 6px 0 rgb(35 51 95 / 25%); color: #fff; cursor: pointer; font-size: clamp(1.1rem, 4vw, 1.45rem); font-weight: 800; padding: 8px 22px; }
+.gardenScreen__watering img { inline-size: 48px; block-size: 48px; object-fit: contain; }
+.rowReviewScreen { background: var(--color-sky); }
+.rowReviewScreen__header { display: flex; min-block-size: var(--touch-target-secondary); align-items: center; justify-content: space-between; gap: 12px; border: 3px solid var(--color-ink-indigo); border-radius: 24px; background: var(--color-paper-cream); padding-inline: 16px; }
+.rowReviewScreen__header p { margin: 0; font-weight: 800; }
+.rowReviewScreen__header .lessonScreen__speaker svg { inline-size: 34px; block-size: 34px; fill: none; stroke: currentcolor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 5; }
+.rowReviewScreen__header .lessonScreen__speaker path:first-child { fill: currentcolor; }
+.rowReviewScreen__body { display: grid; align-content: center; justify-items: center; gap: 16px; min-block-size: 0; }
+@media (min-width: 700px) and (orientation: landscape) { .gardenScreen__beds { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rowReviewScreen__body { grid-template-columns: minmax(0, 1fr) minmax(240px, .7fr); align-items: center; } .rowReviewScreen .choiceGrid { grid-template-columns: 1fr; } }

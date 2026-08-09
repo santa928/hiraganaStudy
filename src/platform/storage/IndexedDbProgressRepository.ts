@@ -230,11 +230,14 @@ export class IndexedDbProgressRepository implements ProgressRepository {
     }
   }
 
-  /** 主保存と代替保存を独立して削除し、片方の失敗で残りの削除を止めない。 */
+  /** 主保存と代替保存を独立して削除し、削除不能時は進捗を画面上で保持できるよう失敗を返す。 */
   public async reset(): Promise<void> {
     const results = await Promise.allSettled([this.deletePrimary(), this.deleteFallback()]);
 
-    if (results.some((result) => result.status === "rejected")) this.markStorageDegraded();
+    if (results.some((result) => result.status === "rejected")) {
+      this.markStorageDegraded();
+      throw new Error("進捗をリセットできませんでした。");
+    }
   }
 
   /** 既存世代をseedし、時計に依存しない単調増加revisionを割り当てる。 */

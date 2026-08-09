@@ -353,6 +353,16 @@ describe("IndexedDbProgressRepository", () => {
     await expect(new IndexedDbProgressRepository(databaseName).load()).resolves.toEqual(createInitialProgress());
   });
 
+  it("resetで保存先の削除に失敗した時は、保護者画面が進捗を保持できるよう失敗を返す", async () => {
+    const repository = new IndexedDbProgressRepository(testDatabaseName(), {
+      indexedDb: null,
+      localStorage: new ThrowingStorage(),
+    });
+
+    await expect(repository.reset()).rejects.toThrow("リセット");
+    expect(repository.storageDegraded).toBe(true);
+  });
+
   it("両保存先が失敗してもsaveは例外を出さず、ランタイムへ劣化状態を公開する", async () => {
     const runtime = createBrowserRuntime({
       databaseName: testDatabaseName(),

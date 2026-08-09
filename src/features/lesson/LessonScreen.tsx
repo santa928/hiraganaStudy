@@ -16,6 +16,10 @@ export interface LessonScreenProps {
   readonly state: LearningState;
   readonly dispatch: (event: LessonEvent) => void;
   readonly audio: AudioGuide;
+  /** 保護者設定で読み上げを停止している時は、再生要求も出さない。 */
+  readonly speechEnabled?: boolean;
+  /** 任意復習だけに表示する、本線を変更しない庭への戻り口。 */
+  readonly onReturnToGarden?: () => void;
 }
 
 type GuideKey = "intro" | "shape" | "sound" | "again" | "show" | "traceWide" | "traceNarrow" | "copyWithModel" | "freeWrite" | "reward";
@@ -63,7 +67,7 @@ function awaitedIllustration(character: LearningState["currentKana"]): string {
 }
 
 /** 状態機械の8段階を、朝の庭の一画面一操作へ接続する。 */
-export function LessonScreen({ state, dispatch, audio }: LessonScreenProps): React.JSX.Element {
+export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onReturnToGarden }: LessonScreenProps): React.JSX.Element {
   const entry = useMemo(() => findKana(state.currentKana), [state.currentKana]);
   const voiceBird = getWorldIllustration("voice-bird");
   const gardenBackground = getWorldIllustration("garden-background");
@@ -96,12 +100,13 @@ export function LessonScreen({ state, dispatch, audio }: LessonScreenProps): Rea
   useEffect(() => {
     replayRequestRef.current += 1;
     audio.cancel();
+    if (!speechEnabled) return;
     void audio.speak(guide, { interrupt: true });
     return () => {
       replayRequestRef.current += 1;
       audio.cancel();
     };
-  }, [audio, guide, stageIdentity]);
+  }, [audio, guide, speechEnabled, stageIdentity]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -109,6 +114,7 @@ export function LessonScreen({ state, dispatch, audio }: LessonScreenProps): Rea
   }, []);
 
   const replayGuide = (): void => {
+    if (!speechEnabled) return;
     const requestId = replayRequestRef.current + 1;
     const requestedStageIdentity = stageIdentity;
     const requestedGuide = guide;
@@ -173,6 +179,7 @@ export function LessonScreen({ state, dispatch, audio }: LessonScreenProps): Rea
           {state.stage === "reward" ? <button className="lessonButton lessonButton--watering" type="button" onClick={() => dispatch({ type: "CONTINUE" })}>
             <img src={wateringCan.src} alt="" width={wateringCan.width} height={wateringCan.height} />じょうろで つぎへ
           </button> : null}
+          {onReturnToGarden ? <button className="lessonButton lessonButton--secondary" type="button" onClick={onReturnToGarden}>にわへ もどる</button> : null}
         </section>
       </div>
     </main>
