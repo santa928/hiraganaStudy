@@ -63,7 +63,7 @@
 │   │   └── model/selectors.ts                # 次の文字・解放判定
 │   ├── features/lesson/                      # 導入・選択・報酬UI
 │   ├── features/writing/
-│   │   ├── data/generated/                   # CC BY-SAの基本46＋単語用19文字点列
+│   │   ├── data/generated/                   # CC BY-SAの基本46＋単語用20文字点列
 │   │   ├── geometry.ts                       # 点列正規化・距離
 │   │   ├── scoreStroke.ts                    # 緩やかな書字評価
 │   │   └── WritingCanvas.tsx                 # Canvas入力とガイド描画
@@ -553,7 +553,13 @@ git commit -m "日本語音声案内と効果音制御を追加"
 
 ---
 
-### Task 6: 基本46文字と単語用19文字の書き順データ取り込み
+### Task 6: 基本46文字と単語用20文字の書き順データ取り込み
+
+実装時補正（要件削除なし）:
+
+| 状態 | 項目 | 理由 | 影響 |
+| --- | --- | --- | --- |
+| 追加 | 単語用書字文字に「ぽ」を追加 | 固定60語の `ぽけっと` を1文字ずつ書けるようにするため | 追加文字は19から20、生成テンプレート総数は65から66になる |
 
 **Files:**
 - Create: `scripts/import-kana-strokes.mjs`
@@ -580,7 +586,7 @@ const SOURCE = {
 
 const ADVANCED_WRITING_CHARACTERS = [
   "が", "ぎ", "ご", "ざ", "ぞ", "だ", "で", "ど", "ば", "ぶ",
-  "べ", "ぼ", "ぱ", "ぴ", "ぷ", "っ", "ゃ", "ゅ", "ょ",
+  "べ", "ぼ", "ぱ", "ぴ", "ぷ", "ぽ", "っ", "ゃ", "ゅ", "ょ",
 ] as const;
 ```
 
@@ -589,7 +595,7 @@ const ADVANCED_WRITING_CHARACTERS = [
 - [ ] **Step 2: 失敗するデータ完全性テストを書く**
 
 ```ts
-it("基本46文字と単語用19文字に正規化済みの書き順点列がある", () => {
+it("基本46文字と単語用20文字に正規化済みの書き順点列がある", () => {
   for (const character of [...KANA_ORDER, ...ADVANCED_WRITING_CHARACTERS]) {
     const template = loadStrokeTemplate(character);
     expect(template.character).toBe(character);
@@ -610,7 +616,7 @@ Expected: 生成JSONが見つからずFAIL。
 
 Run: `docker compose run --rm app node scripts/import-kana-strokes.mjs`
 
-変換は基本46文字と単語60語で使う19文字を抽出し、各strokeを48点へ再サンプリングして小数4桁へ丸める。文字、stroke数、stroke順、direction、isCurlは保持する。`THIRD_PARTY_NOTICES.md` に原作者、KanjiVG、fude-kana-data、source commit、変換内容、CC BY-SA 3.0リンクを記載する。
+変換は基本46文字と単語60語で使う20文字を抽出し、各strokeを48点へ再サンプリングして小数4桁へ丸める。文字、stroke数、stroke順、direction、isCurlは保持する。`THIRD_PARTY_NOTICES.md` に原作者、KanjiVG、fude-kana-data、source commit、変換内容、CC BY-SA 3.0リンクを記載する。
 
 - [ ] **Step 5: データとライセンスを検証する**
 
@@ -621,7 +627,7 @@ docker compose run --rm app npm test -- --run src/features/writing/data/strokeDa
 docker compose run --rm app npm run verify:content
 ```
 
-Expected: 65件、全座標範囲、帰属ファイル、source commitがPASS。
+Expected: 66件、全座標範囲、帰属ファイル、source commitがPASS。
 
 - [ ] **Step 6: コミットする**
 
@@ -963,7 +969,7 @@ git commit -m "文字の庭と保護者画面を追加"
 - Modify: `src/app/App.tsx`
 
 **Interfaces:**
-- Consumes: `WordEntry`、基本46＋単語用19文字の書字データ、`isWordGardenUnlocked`。
+- Consumes: `WordEntry`、基本46＋単語用20文字の書字データ、`isWordGardenUnlocked`。
 - Produces: W1〜W5の各12語、選択・並べ・文字セル書字。
 
 `src/test/renderApp.tsx` は `renderApp({ progress, requestedRoute })` を公開し、不正なroute要求を含むアプリ全体のtestに使う。
@@ -1112,7 +1118,7 @@ git commit -m "PWAとGitHub Pages公開構成を追加"
 
 - [ ] **Step 1: 内容監査scriptを完成させる**
 
-`verify-content.mjs` は46文字順、60語、全illustration、基本46＋単語用19文字の全stroke template、PWA icon、効果音、第三者ライセンスを検査し、欠落時に対象keyを列挙してexit 1にする。
+`verify-content.mjs` は46文字順、60語、全illustration、基本46＋単語用20文字の全stroke template、PWA icon、効果音、第三者ライセンスを検査し、欠落時に対象keyを列挙してexit 1にする。
 
 - [ ] **Step 2: 主要導線scenarioを作る**
 
