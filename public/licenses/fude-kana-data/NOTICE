@@ -15,7 +15,7 @@ Changes in this project
 -----------------------
 - Extracted the 46 basic hiragana and 19 additional word-writing characters.
 - Resampled every ordered stroke to exactly 48 points by arc length.
-- Normalised each character template into a shared 0..1 coordinate system.
+- Normalised each character template with a shared scale, centred short-side padding, and a 0..1 coordinate system.
 - Rounded generated point coordinates to four decimal places.
 - Preserved character identity, stroke order, direction, and isCurl values, including null angle values.
 

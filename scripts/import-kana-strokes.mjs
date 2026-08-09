@@ -20,6 +20,7 @@ const BASIC_WRITING_CHARACTERS = Object.freeze([
   "ま", "み", "む", "め", "も", "や", "ゆ", "よ", "ら", "り",
   "る", "れ", "ろ", "わ", "を", "ん",
 ]);
+const BASIC_WRITING_SEQUENCE = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
 
 /** 単語教材の濁音・半濁音・促音・拗音で使用する追加文字。 */
 const ADVANCED_WRITING_CHARACTERS = Object.freeze([
@@ -166,7 +167,7 @@ function resampleByArcLength(points, count) {
   return resampled;
 }
 
-/** 文字内の全strokeで共通の座標系を作り、範囲内の小数4桁点列へ正規化する。 */
+/** 文字内の全strokeを等方スケールで正規化し、短辺を中央paddingして縦横比を保持する。 */
 function normalizeTemplateStrokes(strokes, character) {
   const sampledStrokes = strokes.map((stroke) => ({
     ...stroke,
@@ -181,14 +182,18 @@ function normalizeTemplateStrokes(strokes, character) {
   const maxY = Math.max(...ys);
   const width = maxX - minX;
   const height = maxY - minY;
-  if (![minX, maxX, minY, maxY, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+  const longestSide = Math.max(width, height);
+  if (![minX, maxX, minY, maxY, width, height, longestSide].every(Number.isFinite) || longestSide <= 0) {
     throw new Error(`${character} cannot be normalised because its template bounds are degenerate`);
   }
+  const scale = 1 / longestSide;
+  const xOffset = (1 - (width * scale)) / 2;
+  const yOffset = (1 - (height * scale)) / 2;
 
   return sampledStrokes.map((stroke) => ({
     points: stroke.points.map(([x, y]) => [
-      roundNormalized((x - minX) / width, character),
-      roundNormalized((y - minY) / height, character),
+      roundNormalized(((x - minX) * scale) + xOffset, character),
+      roundNormalized(((y - minY) * scale) + yOffset, character),
     ]),
     direction: stroke.direction,
     isCurl: stroke.isCurl,
@@ -257,7 +262,7 @@ function projectNotice() {
     "-----------------------",
     "- Extracted the 46 basic hiragana and 19 additional word-writing characters.",
     "- Resampled every ordered stroke to exactly 48 points by arc length.",
-    "- Normalised each character template into a shared 0..1 coordinate system.",
+    "- Normalised each character template with a shared scale, centred short-side padding, and a 0..1 coordinate system.",
     "- Rounded generated point coordinates to four decimal places.",
     "- Preserved character identity, stroke order, direction, and isCurl values, including null angle values.",
     "",
@@ -280,7 +285,7 @@ function thirdPartyNotice() {
     "",
     `Source retrieval URL: ${RAW_BASE_URL}/kana-data/<codepoint>.json`,
     "",
-    "This project extracted 46 basic hiragana and 19 additional word-writing characters, resampled every ordered stroke to 48 points by arc length, normalised each character template into a shared 0..1 coordinate system, and rounded generated point coordinates to four decimal places. Character identity, stroke order, direction, and `isCurl` are preserved, including source `direction.angle: null` values for closed loops.",
+    "This project extracted 46 basic hiragana and 19 additional word-writing characters, resampled every ordered stroke to 48 points by arc length, normalised each character template with a shared scale and centred short-side padding into a 0..1 coordinate system, and rounded generated point coordinates to four decimal places. Character identity, stroke order, direction, and `isCurl` are preserved, including source `direction.angle: null` values for closed loops.",
     "",
     "The generated stroke data is distributed under [Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)](https://creativecommons.org/licenses/by-sa/3.0/). The upstream LICENSE and this project's attribution notice are available at `public/licenses/fude-kana-data/`.",
     "",
@@ -289,6 +294,9 @@ function thirdPartyNotice() {
 
 /** 固定sourceを取得・検査・変換し、データとライセンス通知を決定的に書き出す。 */
 async function main() {
+  if (BASIC_WRITING_CHARACTERS.length !== 46 || BASIC_WRITING_CHARACTERS.join("") !== BASIC_WRITING_SEQUENCE) {
+    throw new Error("Basic writing characters must match the fixed 46-character gojuon order");
+  }
   if (WRITING_CHARACTERS.length !== 65 || new Set(WRITING_CHARACTERS).size !== 65) {
     throw new Error("Writing character set must contain exactly 65 unique characters");
   }
