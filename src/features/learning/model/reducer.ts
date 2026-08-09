@@ -5,9 +5,24 @@ import type {
   LearningProgress,
   LearningState,
   LessonEvent,
+  LessonStage,
 } from "./types";
 
 const ROW_ENDINGS = new Set<KanaCharacter>(["お", "こ", "そ", "と", "の", "ほ", "も", "よ", "ろ", "ん"]);
+const LESSON_STAGES = new Set<LessonStage>([
+  "intro", "shapeMatch", "soundMatch", "traceWide", "traceNarrow", "copyWithModel", "freeWrite", "reward",
+]);
+const KANA_ROWS = new Set<KanaEntry["row"]>(["a", "ka", "sa", "ta", "na", "ha", "ma", "ya", "ra", "wa"]);
+const KANA_PROGRESS_BOOLEAN_FIELDS = [
+  "seen",
+  "shapeMatched",
+  "soundMatched",
+  "traceWideTried",
+  "traceNarrowTried",
+  "copyTried",
+  "freeWriteTried",
+  "completedOnce",
+] as const;
 
 /** 新しい文字の、未体験状態を作る。 */
 function createInitialKanaProgress(): KanaProgress {
@@ -57,22 +72,66 @@ function stateFromProgress(progress: LearningProgress): LearningState {
 function isResumableProgress(progress: unknown): progress is LearningProgress {
   if (typeof progress !== "object" || progress === null) return false;
 
-  const candidate = progress as { readonly currentKanaIndex?: unknown; readonly kana?: unknown };
+  const candidate = progress as {
+    readonly schemaVersion?: unknown;
+    readonly currentKanaIndex?: unknown;
+    readonly stage?: unknown;
+    readonly rowReview?: unknown;
+    readonly kana?: unknown;
+  };
   const currentKanaIndex = candidate.currentKanaIndex;
+  const stage = candidate.stage;
   const kana = candidate.kana;
 
   if (
-    typeof currentKanaIndex !== "number"
+    candidate.schemaVersion !== 1
+    || typeof currentKanaIndex !== "number"
     || !Number.isInteger(currentKanaIndex)
     || currentKanaIndex < 0
     || currentKanaIndex >= KANA_ORDER.length
+    || typeof stage !== "string"
+    || !LESSON_STAGES.has(stage as LessonStage)
+    || !isValidRowReview(candidate.rowReview)
     || typeof kana !== "object"
     || kana === null
   ) {
     return false;
   }
 
-  return KANA_ORDER.every((character) => Object.hasOwn(kana, character));
+  const kanaRecord = kana as Record<string, unknown>;
+
+  return KANA_ORDER.every((character) => (
+    Object.hasOwn(kanaRecord, character) && isValidKanaProgress(kanaRecord[character])
+  ));
+}
+
+/** 行復習が未実施か、既知の行と段階を持つかを検査する。 */
+function isValidRowReview(rowReview: unknown): boolean {
+  if (rowReview === null) return true;
+  if (typeof rowReview !== "object") return false;
+
+  const candidate = rowReview as { readonly row?: unknown; readonly step?: unknown };
+
+  return (
+    typeof candidate.row === "string"
+    && KANA_ROWS.has(candidate.row as KanaEntry["row"])
+    && (candidate.step === "shape" || candidate.step === "sound")
+  );
+}
+
+/** 1文字の再開進捗が状態機械の直接参照に耐える最小完全形かを検査する。 */
+function isValidKanaProgress(progress: unknown): progress is KanaProgress {
+  if (typeof progress !== "object" || progress === null) return false;
+
+  const candidate = progress as Record<string, unknown>;
+
+  return (
+    KANA_PROGRESS_BOOLEAN_FIELDS.every((field) => typeof candidate[field] === "boolean")
+    && typeof candidate.guideCount === "number"
+    && Number.isFinite(candidate.guideCount)
+    && Number.isInteger(candidate.guideCount)
+    && candidate.guideCount >= 0
+  );
 }
 
 /** 現在文字の進捗だけを不変に更新する。 */
@@ -116,16 +175,16 @@ function advanceAfterRowReview(state: LearningState): LearningState {
   });
 }
 
-/** 報酬を確定し、行末なら復習、その他は次の文字へ進める。 */
+/** 非行末は報酬で確定し、行末は確定を保留して復習を始める。 */
 function continueAfterReward(state: LearningState): LearningState {
-  const completed = updateCurrentKana(state, (current) => ({ ...current, completedOnce: true }));
-
-  if (ROW_ENDINGS.has(completed.currentKana)) {
-    return updateProgress(completed, {
-      rowReview: { row: completed.progress.rowReview?.row ?? getKanaRow(completed.currentKana), step: "shape" },
+  if (ROW_ENDINGS.has(state.currentKana)) {
+    return updateProgress(state, {
+      rowReview: { row: getKanaRow(state.currentKana), step: "shape" },
       stage: "shapeMatch",
     });
   }
+
+  const completed = updateCurrentKana(state, (current) => ({ ...current, completedOnce: true }));
 
   return advanceAfterRowReview(completed);
 }
@@ -182,7 +241,9 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
       return updateCurrentKana(state, (current) => ({ ...current, guideCount: current.guideCount + 1 }));
     }
 
-    if (state.progress.rowReview?.step === "sound") return advanceAfterRowReview(state);
+    if (state.progress.rowReview?.step === "sound") {
+      return advanceAfterRowReview(updateCurrentKana(state, (current) => ({ ...current, completedOnce: true })));
+    }
 
     return updateCurrentKana(state, (current) => ({ ...current, soundMatched: true }), { stage: "traceWide" });
   }

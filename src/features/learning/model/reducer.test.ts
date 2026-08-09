@@ -111,6 +111,7 @@ describe("学習状態機械", () => {
     expect(result.currentKana).toBe(character);
     expect(result.stage).toBe("shapeMatch");
     expect(result.progress.rowReview).toEqual({ row, step: "shape" });
+    expect(result.progress.kana[character].completedOnce).toBe(false);
     expect(selectRoute(result.progress)).toEqual({ kind: "rowReview", row });
   });
 
@@ -120,9 +121,12 @@ describe("学習状態機械", () => {
     const next = reduceLesson(sound, { type: "ANSWER_SOUND", correct: true });
 
     expect(sound.progress.rowReview).toEqual({ row: "a", step: "sound" });
+    expect(review.progress.kana["お"].completedOnce).toBe(false);
+    expect(sound.progress.kana["お"].completedOnce).toBe(false);
     expect(next.progress.rowReview).toBeNull();
     expect(next.currentKana).toBe("か");
     expect(next.stage).toBe("intro");
+    expect(next.progress.kana["お"].completedOnce).toBe(true);
   });
 
   it("45文字完了では単語を解放しない", () => {
@@ -141,6 +145,10 @@ describe("学習状態機械", () => {
     const sound = reduceLesson(review, { type: "ANSWER_SHAPE", correct: true });
     const completed = reduceLesson(sound, { type: "ANSWER_SOUND", correct: true });
 
+    expect(review.progress.kana["ん"].completedOnce).toBe(false);
+    expect(sound.progress.kana["ん"].completedOnce).toBe(false);
+    expect(isWordGardenUnlocked(review.progress)).toBe(false);
+    expect(isWordGardenUnlocked(sound.progress)).toBe(false);
     expect(completed.progress.kana["ん"].completedOnce).toBe(true);
     expect(selectRoute(review.progress)).toEqual({ kind: "rowReview", row: "wa" });
     expect(selectRoute(sound.progress)).toEqual({ kind: "rowReview", row: "wa" });
@@ -161,6 +169,27 @@ describe("学習状態機械", () => {
     ["範囲外の文字index", { ...progressAt("く", "traceNarrow"), currentKanaIndex: 46 }],
     ["不完全なkana record", { ...progressAt("く", "traceNarrow"), kana: { あ: progressAt("く", "traceNarrow").kana["あ"] } }],
   ])("RESUMEは%sを初期進捗へ安全にフォールバックする", (_description, invalidProgress) => {
+    const result = reduceLesson(
+      stateAt("あ", "intro"),
+      { type: "RESUME", progress: invalidProgress as unknown as ReturnType<typeof createInitialProgress> },
+    );
+
+    expect(result).toEqual({
+      progress: createInitialProgress(),
+      currentKana: "あ",
+      stage: "intro",
+    });
+  });
+
+  it.each([
+    ["nullのkana進捗", (progress: ReturnType<typeof createInitialProgress>) => ({ ...progress, kana: { ...progress.kana, く: null } })],
+    ["不正な段階", (progress: ReturnType<typeof createInitialProgress>) => ({ ...progress, stage: "invalid-stage" })],
+    ["不正な行復習", (progress: ReturnType<typeof createInitialProgress>) => ({ ...progress, rowReview: { row: "invalid-row", step: "shape" } })],
+    ["不正なschema version", (progress: ReturnType<typeof createInitialProgress>) => ({ ...progress, schemaVersion: 2 })],
+    ["booleanではない文字進捗", (progress: ReturnType<typeof createInitialProgress>) => ({ ...progress, kana: { ...progress.kana, く: { ...progress.kana["く"], seen: "true" } } })],
+    ["負の案内回数", (progress: ReturnType<typeof createInitialProgress>) => ({ ...progress, kana: { ...progress.kana, く: { ...progress.kana["く"], guideCount: -1 } } })],
+  ] as const)("RESUMEは%sを初期進捗へフォールバックする", (_description, createInvalidProgress) => {
+    const invalidProgress = createInvalidProgress(progressAt("く", "traceNarrow"));
     const result = reduceLesson(
       stateAt("あ", "intro"),
       { type: "RESUME", progress: invalidProgress as unknown as ReturnType<typeof createInitialProgress> },
