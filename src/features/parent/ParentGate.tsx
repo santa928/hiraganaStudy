@@ -29,9 +29,12 @@ export function ParentGate({ onOpen, holdDurationMs = 2000 }: ParentGateProps): 
       onOpen();
     }, holdDurationMs);
   }, [clear, holdDurationMs, onOpen]);
-  useEffect(() => () => {
-    mountedRef.current = false;
-    clear();
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clear();
+    };
   }, [clear]);
 
   return <button className="parentGate" type="button" aria-label="おとなの せってい" onPointerDown={(event) => {

@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
 
 import { ParentDashboard, type ParentEnvironment } from "./ParentDashboard";
@@ -8,6 +9,17 @@ import { createInitialProgress } from "../learning/model/reducer";
 const environment: ParentEnvironment = { audioStatus: "ready", storage: "normal", displayMode: "browser", pwaStatus: "未確認" };
 
 describe("ParentGate", () => {
+  it("StrictModeの再setup後も2秒保持で開く", async () => {
+    vi.useFakeTimers();
+    const onOpen = vi.fn();
+    render(<StrictMode><ParentGate onOpen={onOpen} /></StrictMode>);
+    const gate = screen.getByRole("button", { name: "おとなの せってい" });
+    fireEvent.pointerDown(gate, { pointerId: 1 });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(onOpen).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
   it("2秒の連続保持だけで開き、短いtapとcancelでは開かない", async () => {
     vi.useFakeTimers();
     const onOpen = vi.fn();
