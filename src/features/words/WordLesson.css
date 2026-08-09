@@ -1,0 +1,42 @@
+.wordGarden, .wordLesson { color: var(--color-ink-indigo); background: var(--color-sky); min-block-size: 100dvh; padding: max(env(safe-area-inset-top), var(--space-page)) max(env(safe-area-inset-right), var(--space-page)) max(env(safe-area-inset-bottom), var(--space-page)) max(env(safe-area-inset-left), var(--space-page)); }
+.wordGarden { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 16px; }
+.wordGarden__header, .wordGarden__bed, .wordLesson__promptCard, .wordLesson__arrange, .wordLesson__writing { border: 4px solid var(--color-ink-indigo); border-radius: 28px; background: var(--color-paper-cream); box-shadow: 0 6px 0 rgb(35 51 95 / 18%); }
+.wordGarden__header { display: flex; min-block-size: var(--touch-target-secondary); align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; font-weight: 800; }
+.wordGarden__header p { margin: 0; font-size: clamp(1.35rem, 5vw, 2rem); }
+.wordGarden__beds { display: grid; align-content: start; gap: 12px; overflow: auto; padding: 2px; }
+.wordGarden__bed { padding: 10px; }
+.wordGarden__bed[data-current] { outline: 5px solid rgb(119 189 104 / 60%); outline-offset: 3px; }
+.wordGarden__bed h2 { margin: 0 0 8px; font-size: 1rem; }
+.wordGarden__bed > div { display: flex; min-block-size: 52px; align-items: center; flex-wrap: wrap; gap: 8px; }
+.wordGarden__flower, .wordGarden__seed { display: grid; min-inline-size: var(--touch-target-primary); min-block-size: var(--touch-target-primary); place-items: center; border: 2px solid var(--color-ink-indigo); border-radius: 999px; color: var(--color-ink-indigo); font-family: var(--font-kana); font-size: 1.25rem; font-weight: 800; padding-inline: 10px; }
+.wordGarden__flower { background: #f7d76e; cursor: pointer; }
+.wordGarden__seed { background: #b98758; }
+.wordGarden__footer { display: grid; justify-items: center; }
+.wordGarden__start, .wordLesson__next { min-block-size: var(--touch-target-primary); border: 4px solid var(--color-ink-indigo); border-radius: 28px; background: var(--color-grass); box-shadow: 0 6px 0 rgb(35 51 95 / 25%); color: white; cursor: pointer; font-size: clamp(1.1rem, 4vw, 1.45rem); font-weight: 800; padding: 8px 22px; }
+.wordGarden__complete { margin: 0; padding: 16px; border-radius: 24px; background: var(--color-paper-cream); font-weight: 800; }
+.wordLesson { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+.wordLesson__header { display: flex; min-block-size: var(--touch-target-secondary); align-items: center; justify-content: space-between; gap: 12px; border: 3px solid var(--color-ink-indigo); border-radius: 24px; background: rgb(255 244 215 / 92%); padding: 6px 12px; }
+.wordLesson__header p { margin: 0; font-weight: 800; }
+.wordLesson__back, .wordLesson__speaker { min-inline-size: var(--touch-target-secondary); min-block-size: var(--touch-target-secondary); border: 2px solid var(--color-ink-indigo); border-radius: 50%; background: var(--color-paper-cream); color: var(--color-ink-indigo); cursor: pointer; }
+.wordLesson__choice, .wordLesson__arrange, .wordLesson__writing { display: grid; inline-size: min(100%, 620px); align-self: center; justify-self: center; gap: 16px; padding: clamp(14px, 4vw, 28px); }
+.wordLesson__promptCard { position: relative; display: grid; min-block-size: min(42dvh, 300px); place-items: center; padding: 12px; }
+.wordLesson__illustration { inline-size: 100%; max-block-size: min(38dvh, 260px); object-fit: contain; }
+.wordLesson__imageFallback { display: grid; inline-size: min(100%, 280px); aspect-ratio: 1; place-items: center; border: 3px dashed var(--color-grass); border-radius: 30% 70% 55% 45%; background: #f7d76e; color: var(--color-ink-indigo); cursor: pointer; font-family: var(--font-kana); }
+.wordLesson__imageFallback span { inline-size: 42%; block-size: 42%; border: 4px solid currentcolor; border-inline-start-color: transparent; border-radius: 50%; transform: rotate(-35deg); }
+.wordLesson__imageFallback small { font-family: inherit; font-size: .9rem; }
+.wordLesson__speaker { position: absolute; inset-block-start: 8px; inset-inline-end: 8px; background: #f7d76e; }
+.wordLesson__speaker svg { inline-size: 30px; block-size: 30px; fill: currentcolor; }
+.wordLesson__speaker path:last-child { fill: none; stroke: currentcolor; stroke-linecap: round; stroke-width: 5; }
+.wordLesson__choices, .wordLesson__tiles { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.wordLesson__choiceButton, .wordLesson__tile { min-block-size: var(--touch-target-primary); border: 4px solid var(--color-ink-indigo); border-radius: 22px; background: var(--color-paper-cream); color: var(--color-ink-indigo); cursor: pointer; font-family: var(--font-kana); font-size: clamp(1.65rem, 8vw, 3.5rem); font-weight: 800; }
+.wordLesson__arrange > p, .wordLesson__writing > p { margin: 0; text-align: center; font-weight: 800; }
+.wordLesson__placed { display: flex; min-block-size: 68px; align-items: center; justify-content: center; gap: 8px; border-bottom: 3px dashed var(--color-grass); font-family: var(--font-kana); font-size: clamp(2rem, 9vw, 4rem); }
+.wordLesson__writingCell { min-block-size: min(48dvh, 360px); }
+.wordLesson__writingCell--small { inline-size: min(100%, 420px); justify-self: center; }
+.wordLesson__writingCell .writingCanvas { min-block-size: min(48dvh, 360px); }
+.wordLesson__cellDots { display: flex; justify-content: center; gap: 8px; font-family: var(--font-kana); font-size: 1.4rem; }
+.wordLesson__cellDots span { display: grid; inline-size: 36px; block-size: 36px; place-items: center; border: 2px solid var(--color-ink-indigo); border-radius: 50%; opacity: .45; }
+.wordLesson__cellDots .is-current { background: #f7d76e; opacity: 1; }
+@media (min-width: 620px) and (orientation: portrait) { .wordLesson__choices { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 700px) and (orientation: landscape) { .wordLesson__choice { grid-template-columns: minmax(0, 1fr) minmax(240px, .72fr); align-items: center; } .wordLesson__choices { grid-template-columns: 1fr; } .wordGarden__beds { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (orientation: landscape) and (max-height: 500px) { .wordGarden, .wordLesson { block-size: 100dvh; overflow: hidden; padding-block: 8px; gap: 8px; } .wordGarden__beds { gap: 8px; } .wordGarden__bed { padding: 6px; } .wordGarden__bed > div { min-block-size: 36px; } .wordGarden__flower, .wordGarden__seed { inline-size: 36px; block-size: 36px; font-size: 1rem; } .wordLesson__illustration { max-block-size: 45vh; } .wordLesson__writingCell, .wordLesson__writingCell .writingCanvas { min-block-size: 170px; } }

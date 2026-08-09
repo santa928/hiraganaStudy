@@ -80,6 +80,9 @@ export type LessonEvent =
   | { readonly type: "COMPLETE_COPY" }
   | { readonly type: "COMPLETE_FREE_WRITE" }
   | { readonly type: "SKIP_FREE_WRITE" }
+  | { readonly type: "COMPLETE_WORD_SELECTION"; readonly wordId: string }
+  | { readonly type: "COMPLETE_WORD_ARRANGE"; readonly wordId: string }
+  | { readonly type: "COMPLETE_WORD_WRITING"; readonly wordId: string }
   | { readonly type: "CONTINUE" }
   | { readonly type: "RESUME"; readonly progress: LearningProgress };
 

@@ -26,7 +26,7 @@ describe("repairProgress", () => {
 
     expect(repairProgress(raw)).toEqual({
       ...resumableProgressAt("く", "traceNarrow"),
-      words: {},
+      words: createInitialProgress().words,
       settings: { speech: false, music: true, effects: false, reducedMotion: true },
     });
   });
@@ -36,6 +36,33 @@ describe("repairProgress", () => {
     delete raw.lessonAttempt;
 
     expect(repairProgress(raw).lessonAttempt).toBeNull();
+  });
+
+  it("既知60語だけを部分復旧し、段階が逆転した語を安全に正規化する", () => {
+    const raw = {
+      ...progressWithCompletedCount(46),
+      words: {
+        "w1-01": { selected: true, arranged: true, writingTried: true },
+        "w1-02": { selected: false, arranged: true, writingTried: true },
+        "w1-03": { selected: true, arranged: true, writingTried: true },
+        unknown: { selected: true, arranged: true, writingTried: true },
+      },
+    };
+
+    const repaired = repairProgress(raw);
+    expect(repaired.words["w1-01"]).toEqual({ selected: true, arranged: true, writingTried: true });
+    expect(repaired.words["w1-02"]).toEqual({ selected: false, arranged: false, writingTried: false });
+    expect(repaired.words["w1-03"]).toEqual({ selected: false, arranged: false, writingTried: false });
+    expect(repaired.words).not.toHaveProperty("unknown");
+  });
+
+  it("46文字未完了の旧保存では単語進捗を全初期化し、単語飛ばしを防ぐ", () => {
+    const raw = {
+      ...createInitialProgress(),
+      words: { "w1-01": { selected: true, arranged: true, writingTried: true } },
+    };
+
+    expect(repairProgress(raw).words).toEqual(createInitialProgress().words);
   });
 
   it("現在の文字と選択段階に整合するlessonAttemptだけを保存する", () => {
@@ -79,7 +106,7 @@ describe("repairProgress", () => {
     expect(repaired.kana["く"]).toEqual(createInitialProgress().kana["く"]);
   });
 
-  it("単語カタログ未導入時は任意キーを保存進捗へ残さず、設定だけを部分復旧する", () => {
+  it("未知単語を保存進捗へ残さず、既知60語と設定を部分復旧する", () => {
     const raw = {
       ...resumableProgressAt("く", "traceNarrow"),
       words: {
@@ -90,7 +117,7 @@ describe("repairProgress", () => {
     };
 
     expect(repairProgress(raw)).toMatchObject({
-      words: {},
+      words: createInitialProgress().words,
       settings: { speech: false, music: false, effects: false, reducedMotion: false },
     });
   });

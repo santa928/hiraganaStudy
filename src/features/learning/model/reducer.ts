@@ -1,4 +1,5 @@
 import { KANA_ORDER } from "../content/kana";
+import { WORD_ENTRIES } from "../content/words";
 import type { KanaCharacter, KanaEntry } from "../content/types";
 import type {
   KanaProgress,
@@ -7,6 +8,7 @@ import type {
   LearningState,
   LessonEvent,
   LessonStage,
+  WordProgress,
 } from "./types";
 
 const ROW_ENDINGS = new Set<KanaCharacter>(["お", "こ", "そ", "と", "の", "ほ", "も", "よ", "ろ", "ん"]);
@@ -40,6 +42,11 @@ function createInitialKanaProgress(): KanaProgress {
   };
 }
 
+/** 60語すべての、未体験状態を作る。 */
+export function createInitialWordProgress(): WordProgress {
+  return { selected: false, arranged: false, writingTried: false };
+}
+
 /** 46文字すべてが未体験の初期保存進捗を作る。 */
 export function createInitialProgress(): LearningProgress {
   return {
@@ -51,7 +58,7 @@ export function createInitialProgress(): LearningProgress {
     kana: Object.fromEntries(
       KANA_ORDER.map((character) => [character, createInitialKanaProgress()]),
     ) as Record<KanaCharacter, KanaProgress>,
-    words: {},
+    words: Object.fromEntries(WORD_ENTRIES.map((entry) => [entry.id, createInitialWordProgress()])),
     settings: {
       speech: true,
       music: false,
@@ -206,6 +213,25 @@ function updateProgress(
   return stateFromProgress(withNormalizedLessonAttempt({ ...state.progress, ...updates }));
 }
 
+/** 既知単語の進捗だけを一方向に更新し、未知IDの外部入力を無視する。 */
+function updateWordProgress(
+  state: LearningState,
+  wordId: string,
+  update: (current: WordProgress) => WordProgress,
+): LearningState {
+  const current = state.progress.words[wordId];
+  if (!current) return state;
+  return stateFromProgress({ ...state.progress, words: { ...state.progress.words, [wordId]: update(current) } });
+}
+
+/** 46文字完了後に、本線の最初の未完了語だけを更新対象にする。 */
+function canAdvanceWord(state: LearningState, wordId: string, step: keyof WordProgress): boolean {
+  if (!KANA_ORDER.every((character) => state.progress.kana[character].completedOnce)) return false;
+  const target = state.progress.words[wordId];
+  if (!target || target[step]) return false;
+  return WORD_ENTRIES.find((entry) => !state.progress.words[entry.id].writingTried)?.id === wordId;
+}
+
 /** 行末の復習完了後、次の文字または単語コースへ進める。 */
 function advanceAfterRowReview(state: LearningState): LearningState {
   const nextKanaIndex = state.progress.currentKanaIndex + 1;
@@ -316,6 +342,16 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
 
   if (event.type === "SKIP_FREE_WRITE" && state.stage === "freeWrite") {
     return updateProgress(state, { stage: "reward" });
+  }
+
+  if (event.type === "COMPLETE_WORD_SELECTION") {
+    return canAdvanceWord(state, event.wordId, "selected") ? updateWordProgress(state, event.wordId, (word) => ({ ...word, selected: true })) : state;
+  }
+  if (event.type === "COMPLETE_WORD_ARRANGE") {
+    return canAdvanceWord(state, event.wordId, "arranged") ? updateWordProgress(state, event.wordId, (word) => word.selected ? { ...word, arranged: true } : word) : state;
+  }
+  if (event.type === "COMPLETE_WORD_WRITING") {
+    return canAdvanceWord(state, event.wordId, "writingTried") ? updateWordProgress(state, event.wordId, (word) => word.arranged ? { ...word, writingTried: true } : word) : state;
   }
 
   return state;

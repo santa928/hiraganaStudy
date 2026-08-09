@@ -8,6 +8,7 @@ import { createInitialProgress, reduceLesson } from "../features/learning/model/
 import type { LearningProgress } from "../features/learning/model/types";
 import type { ProgressRepository } from "../platform/storage/ProgressRepository";
 import type { AudioGuide } from "../platform/audio/AudioGuide";
+import { progressWithCompletedCount } from "../test/fixtures/progress";
 
 function createRuntime(load: () => Promise<LearningProgress>): { readonly runtime: GameRuntime; readonly save: ReturnType<typeof vi.fn> } {
   const save = vi.fn<ProgressRepository["save"]>().mockResolvedValue(undefined);
@@ -18,6 +19,25 @@ function createRuntime(load: () => Promise<LearningProgress>): { readonly runtim
 }
 
 describe("App", () => {
+  it("45文字完了の保存ではことばのにわへ遷移せず、46文字完了の庭CTAはことばのにわを開く", async () => {
+    const incomplete = progressWithCompletedCount(45);
+    const complete = progressWithCompletedCount(46);
+    const startedIncomplete = { ...incomplete, kana: Object.fromEntries(Object.entries(incomplete.kana).map(([character, value]) => [character, { ...value, seen: true }])) as LearningProgress["kana"] };
+    const startedComplete = { ...complete, kana: Object.fromEntries(Object.entries(complete.kana).map(([character, value]) => [character, { ...value, seen: true }])) as LearningProgress["kana"] };
+    const first = createRuntime(() => Promise.resolve(startedIncomplete));
+    const { unmount } = render(<App runtime={first.runtime} />);
+
+    expect(await screen.findByTestId("garden-screen")).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("button", { name: "つづきを あそぶ" }));
+    expect(screen.queryByTestId("word-garden")).not.toBeInTheDocument();
+    unmount();
+
+    const second = createRuntime(() => Promise.resolve(startedComplete));
+    render(<App runtime={second.runtime} />);
+    expect(await screen.findByTestId("garden-screen")).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("button", { name: "つづきを あそぶ" }));
+    expect(await screen.findByTestId("word-garden")).toBeVisible();
+  });
   it("production音声の開始・終了を効果音duckingへ伝える", () => {
     const setSpeechActive = vi.fn();
     const effects: AppSoundEffects = { applySettings: vi.fn(), setSpeechActive, startGardenLoop: vi.fn().mockResolvedValue(undefined), stopGardenLoop: vi.fn(), play: vi.fn().mockResolvedValue(undefined) };

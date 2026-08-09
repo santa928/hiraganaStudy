@@ -57,6 +57,11 @@ export interface ContentIssue {
     | "invalid-distractors"
     | "invalid-special-usage"
     | "invalid-word-stage"
+    | "word-count"
+    | "duplicate-word"
+    | "invalid-word-id"
+    | "invalid-word-writing-cells"
+    | "invalid-word-illustration"
     | "missing-asset"
     | "missing-stroke";
   readonly item?: string;

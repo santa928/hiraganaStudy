@@ -6,6 +6,16 @@ import { isWordGardenUnlocked, selectRoute } from "./selectors";
 import { progressAt, progressWithCompletedCount, stateAt } from "../../../test/fixtures/progress";
 
 describe("学習状態機械", () => {
+  it("46文字未完了時と本線より先の単語イベントを無視する", () => {
+    const initial = createInitialProgress();
+    const state = { progress: initial, currentKana: "あ" as const, stage: "intro" as const };
+    expect(reduceLesson(state, { type: "COMPLETE_WORD_SELECTION", wordId: "w1-01" })).toEqual(state);
+
+    const completed = progressWithCompletedCount(46);
+    const wordState = { progress: completed, currentKana: "ん" as const, stage: "reward" as const };
+    expect(reduceLesson(wordState, { type: "COMPLETE_WORD_SELECTION", wordId: "w1-02" })).toEqual(wordState);
+  });
+
   it("初期進捗はあの導入から始まり、全46文字を未体験として作る", () => {
     const progress = createInitialProgress();
 

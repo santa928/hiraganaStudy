@@ -83,7 +83,7 @@ describe("IndexedDbProgressRepository", () => {
       revision: expect.any(Number),
       progress: {
         currentKanaIndex: KANA_ORDER.indexOf("く"),
-        words: {},
+        words: createInitialProgress().words,
       },
     });
     expect(JSON.parse(storage.getItem(FALLBACK_PROGRESS_STORAGE_KEY) ?? "null").progress).not.toMatchObject({

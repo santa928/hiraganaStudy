@@ -1,0 +1,45 @@
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+
+import { createInitialProgress } from "../learning/model/reducer";
+import { WordLessonScreen } from "./WordLessonScreen";
+
+const audio = { cancel: vi.fn(), getStatus: () => "visual-only" as const, unlock: vi.fn().mockResolvedValue("visual-only"), speak: vi.fn().mockResolvedValue(undefined) };
+
+describe("WordLessonScreen", () => {
+  it("完了語の復習は選ぶ・並べる・書くを保存変更なしで通る", async () => {
+    const user = userEvent.setup();
+    const initial = createInitialProgress();
+    const progress = { ...initial, words: { ...initial.words, "w1-01": { selected: true, arranged: true, writingTried: true } } };
+    const onSelected = vi.fn();
+    const onArranged = vi.fn();
+    const onWritten = vi.fn();
+    render(<WordLessonScreen progress={progress} wordId="w1-01" audio={audio} reviewMode onSelected={onSelected} onArranged={onArranged} onWritten={onWritten} onReturnToGarden={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "いえ" }));
+    expect(screen.getByTestId("word-arrange")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "い" }));
+    await user.click(screen.getByRole("button", { name: "え" }));
+    const firstCanvas = screen.getByRole("application", { name: "い を かく" });
+    fireEvent.pointerDown(firstCanvas, { pointerId: 1, isPrimary: true, pointerType: "touch", clientX: 12, clientY: 12 });
+    fireEvent.pointerUp(firstCanvas, { pointerId: 1, isPrimary: true, pointerType: "touch", clientX: 18, clientY: 18 });
+    const secondCanvas = screen.getByRole("application", { name: "え を かく" });
+    fireEvent.pointerDown(secondCanvas, { pointerId: 2, isPrimary: true, pointerType: "touch", clientX: 12, clientY: 12 });
+    fireEvent.pointerUp(secondCanvas, { pointerId: 2, isPrimary: true, pointerType: "touch", clientX: 18, clientY: 18 });
+    expect(screen.getByText("いえ の はなが さいたよ")).toBeVisible();
+    expect(onSelected).not.toHaveBeenCalled();
+    expect(onArranged).not.toHaveBeenCalled();
+    expect(onWritten).not.toHaveBeenCalled();
+  });
+
+  it("画像失敗時も問題カードに正答語を出さない", () => {
+    const initial = createInitialProgress();
+    render(<WordLessonScreen progress={initial} wordId="w1-01" audio={audio} onSelected={vi.fn()} onArranged={vi.fn()} onWritten={vi.fn()} onReturnToGarden={vi.fn()} />);
+
+    fireEvent.error(document.querySelector(".wordLesson__illustration") as HTMLImageElement);
+    const card = screen.getByTestId("word-choice").querySelector("[data-layout='word-card']") as HTMLElement;
+    expect(within(card).queryByText("いえ")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "いえ" })).toHaveLength(1);
+  });
+});

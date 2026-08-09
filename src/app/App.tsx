@@ -5,6 +5,7 @@ import { createBrowserRuntime, type GameRuntime } from "./GameRuntime";
 import { GardenScreen } from "../features/garden/GardenScreen";
 import { RowReviewScreen } from "../features/garden/RowReviewScreen";
 import { KANA_ORDER, findKana } from "../features/learning/content/kana";
+import { WORD_ENTRIES } from "../features/learning/content/words";
 import { getWorldIllustration } from "../features/learning/content/assetCatalog";
 import { createInitialProgress, reduceLesson } from "../features/learning/model/reducer";
 import { isWordGardenUnlocked, selectRoute } from "../features/learning/model/selectors";
@@ -12,6 +13,8 @@ import type { KanaCharacter } from "../features/learning/content/types";
 import type { LearningSettings, LearningState, LessonEvent } from "../features/learning/model/types";
 import { LessonScreen, createLessonChoices } from "../features/lesson/LessonScreen";
 import { ParentDashboard, type ParentEnvironment } from "../features/parent/ParentDashboard";
+import { WordGardenScreen } from "../features/words/WordGardenScreen";
+import { WordLessonScreen } from "../features/words/WordLessonScreen";
 import { BrowserSpeechGuide } from "../platform/audio/BrowserSpeechGuide";
 import type { AudioGuide } from "../platform/audio/AudioGuide";
 import { SoundEffects } from "../platform/audio/SoundEffects";
@@ -32,7 +35,7 @@ export interface AppProps {
   readonly effects?: AppSoundEffects;
 }
 
-type EntryScreen = "soundGate" | "watering" | "garden" | "lesson" | "rowReview" | "parent";
+type EntryScreen = "soundGate" | "watering" | "garden" | "lesson" | "rowReview" | "parent" | "wordGarden" | "wordLesson";
 
 /** 読み上げ中だけ、対応する効果音実装へducking状態を伝える。 */
 export function createSpeechDuckingHandler(effects: AppSoundEffects): (active: boolean) => void {
@@ -72,6 +75,8 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
   ));
   const [reviewState, setReviewState] = useState<LearningState | null>(null);
   const [screen, setScreen] = useState<EntryScreen>("soundGate");
+  const [activeWordId, setActiveWordId] = useState<string | null>(null);
+  const [wordReviewMode, setWordReviewMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasHydrated, setHasHydrated] = useState(false);
   const skipInitialSaveRef = useRef(false);
@@ -129,7 +134,7 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     effects.applySettings(state.progress.settings);
   }, [effects, state.progress.settings]);
   useEffect(() => {
-    if (screen === "garden" && state.progress.settings.music) void effects.startGardenLoop();
+    if ((screen === "garden" || screen === "wordGarden") && state.progress.settings.music) void effects.startGardenLoop();
     else effects.stopGardenLoop();
     return () => effects.stopGardenLoop();
   }, [effects, screen, state.progress.settings.music]);
@@ -176,7 +181,11 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
       setScreen("rowReview");
       return;
     }
-    if (route.kind === "wordGarden") return;
+    if (route.kind === "wordGarden") {
+      audio.cancel();
+      setScreen("wordGarden");
+      return;
+    }
     if (!state.progress.kana[state.currentKana].seen) dispatch({ type: "START" });
     setScreen("lesson");
   };
@@ -198,6 +207,8 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     if (!reviewState) return;
     if (event.type === "CONTINUE" && reviewState.stage === "reward") {
       setReviewState(null);
+      setActiveWordId(null);
+      setWordReviewMode(false);
       setScreen("garden");
       return;
     }
@@ -206,6 +217,19 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
   const changeSettings = (settings: LearningSettings): void => {
     if (resetInFlightRef.current) return;
     setState((current) => ({ ...current, progress: { ...current.progress, settings } }));
+  };
+  /** 書字まで終えた語は同じ花壇の次語へ進み、段階境界だけ庭へ戻す。 */
+  const completeWordWriting = (wordId: string): void => {
+    dispatch({ type: "COMPLETE_WORD_WRITING", wordId });
+    const index = WORD_ENTRIES.findIndex((word) => word.id === wordId);
+    const currentWord = WORD_ENTRIES[index];
+    const nextWord = WORD_ENTRIES[index + 1];
+    if (!currentWord || !nextWord || nextWord.stage !== currentWord.stage) {
+      setActiveWordId(null);
+      setScreen("wordGarden");
+      return;
+    }
+    setActiveWordId(nextWord.id);
   };
   const reset = async (): Promise<void> => {
     if (resetInFlightRef.current) return;
@@ -244,6 +268,8 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
 
   if (isLoading) return <main className="app-shell" data-testid="app-loading" aria-busy="true" />;
   if (screen === "parent") return <ParentDashboard progress={state.progress} environment={environment} onSettingsChange={changeSettings} onReset={reset} onClose={() => setScreen("garden")} />;
+  if (screen === "wordGarden") return <WordGardenScreen progress={state.progress} onStart={(wordId) => { setWordReviewMode(false); setActiveWordId(wordId); setScreen("wordLesson"); }} onReview={(wordId) => { setWordReviewMode(true); setActiveWordId(wordId); setScreen("wordLesson"); }} />;
+  if (screen === "wordLesson" && activeWordId) return <WordLessonScreen progress={state.progress} wordId={activeWordId} audio={audio} reviewMode={wordReviewMode} onSelected={(wordId) => dispatch({ type: "COMPLETE_WORD_SELECTION", wordId })} onArranged={(wordId) => dispatch({ type: "COMPLETE_WORD_ARRANGE", wordId })} onWritten={completeWordWriting} onReturnToGarden={() => { audio.cancel(); setActiveWordId(null); setWordReviewMode(false); setScreen("wordGarden"); }} />;
   if (screen === "rowReview") return <RowReviewScreen state={state} dispatch={handleMainDispatch} audio={audio} />;
   if (screen === "garden") return <GardenScreen progress={state.progress} resumeRoute={route} onContinue={continueFromGarden} onReview={beginReview} onOpenParent={() => setScreen("parent")} />;
   if (screen === "lesson") {

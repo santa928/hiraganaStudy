@@ -1,4 +1,5 @@
 import { KANA_ENTRIES, KANA_ORDER } from "../../features/learning/content/kana";
+import { WORD_ENTRIES } from "../../features/learning/content/words";
 import type { KanaCharacter } from "../../features/learning/content/types";
 import { createInitialProgress } from "../../features/learning/model/reducer";
 import type {
@@ -8,6 +9,7 @@ import type {
   LearningSettings,
   LessonStage,
   RowReviewProgress,
+  WordProgress,
 } from "../../features/learning/model/types";
 
 const LESSON_STAGES = new Set<LessonStage>([
@@ -27,6 +29,15 @@ const KANA_PROGRESS_BOOLEAN_FIELDS = [
 /** 保存データの型境界で、配列を除くオブジェクトかを判定する。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 既知語の順方向にだけ成立する、部分保存の単語進捗を補正する。 */
+function repairWordProgress(value: unknown, initial: WordProgress): WordProgress {
+  if (!isRecord(value)) return initial;
+  const selected = value.selected === true;
+  const arranged = selected && value.arranged === true;
+  const writingTried = arranged && value.writingTried === true;
+  return { selected, arranged, writingTried };
 }
 
 /** 1文字分が完全な進捗かを検査する。壊れた文字は全体を初期化する。 */
@@ -105,7 +116,7 @@ function repairLessonAttempt(value: unknown, currentKana: KanaCharacter, stage: 
 /** 外部・旧形式の保存値を、現在の安全な学習進捗へ部分復旧する。
  *
  * 未知のスキーマは新規進捗へ戻し、既知スキーマでは壊れた文字・設定だけを初期値へ戻す。
- * 単語カタログが未導入の間は、任意キーを保存しないため単語進捗を空にする。
+ * 単語は既知の60 IDだけを復元し、不明IDと不可能な段階逆転は捨てる。
  * 入力オブジェクトは変更しない。
  */
 export function repairProgress(raw: unknown): LearningProgress {
@@ -122,6 +133,7 @@ export function repairProgress(raw: unknown): LearningProgress {
     ? raw.stage as LessonStage
     : initial.stage;
   const rawKana = isRecord(raw.kana) ? raw.kana : {};
+  const rawWords = isRecord(raw.words) ? raw.words : {};
 
   const kana = Object.fromEntries(
     KANA_ORDER.map((character) => [character, repairKanaProgress(rawKana[character], initial.kana[character])]),
@@ -132,6 +144,15 @@ export function repairProgress(raw: unknown): LearningProgress {
   const positionChanged = currentKanaIndex !== normalizedIndex;
   const normalizedStage = allCompleted ? "reward" : positionChanged ? initial.stage : stage;
   const currentKana = KANA_ORDER[normalizedIndex] ?? KANA_ORDER[0];
+  const repairedWords: Record<string, WordProgress> = {};
+  let hasIncompleteWord = false;
+  for (const entry of WORD_ENTRIES) {
+    const repaired = hasIncompleteWord
+      ? initial.words[entry.id]
+      : repairWordProgress(rawWords[entry.id], initial.words[entry.id]);
+    repairedWords[entry.id] = repaired;
+    if (!repaired.writingTried) hasIncompleteWord = true;
+  }
 
   return {
     schemaVersion: 1,
@@ -142,7 +163,7 @@ export function repairProgress(raw: unknown): LearningProgress {
       : null,
     lessonAttempt: repairLessonAttempt(raw.lessonAttempt, currentKana, normalizedStage),
     kana,
-    words: {},
+    words: allCompleted ? repairedWords : initial.words,
     settings: repairSettings(raw.settings, initial.settings),
   };
 }
