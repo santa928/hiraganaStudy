@@ -98,6 +98,11 @@ function defaultAriaLabel(character: string, mode: WritingMode): string {
   return `${character} を なぞろう`;
 }
 
+/** primaryの指・ペン、または左マウスボタンだけを書字開始として受け入れる。 */
+function canStartWriting(event: React.PointerEvent<HTMLCanvasElement>): boolean {
+  return event.isPrimary === true && (event.pointerType !== "mouse" || event.button === 0);
+}
+
 /** Pointer captureの開始に失敗した場合でも、書字面を操作不能状態にしない。 */
 function trySetPointerCapture(canvas: HTMLCanvasElement, pointerId: number): boolean {
   if (typeof canvas.setPointerCapture !== "function") return true;
@@ -266,7 +271,7 @@ export function WritingCanvas({ template, mode, resetKey, disabled = false, onCh
 
   /** pointerdownで一本の入力所有権を得る。 */
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>): void => {
-    if (disabled || activePointerIdRef.current !== null) return;
+    if (disabled || activePointerIdRef.current !== null || !canStartWriting(event)) return;
     event.preventDefault();
     activePointerIdRef.current = event.pointerId;
     activeStrokeRef.current = [];

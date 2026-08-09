@@ -75,9 +75,23 @@ function installCanvasContext(): ReturnType<typeof vi.spyOn> {
   return vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
 }
 
-function pointEvent(type: string, pointerId: number, x: number, y: number): Event {
+function pointEvent(
+  type: string,
+  pointerId: number,
+  x: number,
+  y: number,
+  options: Partial<{ readonly isPrimary: boolean; readonly button: number; readonly pointerType: string }> = {},
+): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
-  Object.assign(event, { pointerId, clientX: x, clientY: y, pointerType: "touch", buttons: 1 });
+  Object.assign(event, {
+    pointerId,
+    clientX: x,
+    clientY: y,
+    pointerType: options.pointerType ?? "touch",
+    isPrimary: options.isPrimary ?? true,
+    button: options.button ?? 0,
+    buttons: options.button === undefined || options.button === 0 ? 1 : 4,
+  });
   return event;
 }
 
@@ -142,6 +156,39 @@ describe("WritingCanvas", () => {
     expect(release).toHaveBeenCalledWith(1);
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0][0]).toEqual([[0.1, 0.1], [0.2, 0.2], [0.3, 0.3], [0.4, 0.4]]);
+    animation.restore();
+  });
+
+  it("非primaryと右・中クリックは書字を開始せず、primary touch/pen/左クリックだけを受ける", () => {
+    installCanvasContext();
+    const animation = installAnimationFrame();
+    const onChange = vi.fn();
+    const { getByRole } = render(<WritingCanvas template={loadStrokeTemplate("あ")} mode="traceWide" onChange={onChange} />);
+    const canvas = getByRole("application");
+    const capture = vi.fn();
+    Object.assign(canvas, { setPointerCapture: capture, releasePointerCapture: vi.fn() });
+
+    const nonPrimary = pointEvent("pointerdown", 40, 10, 10, { isPrimary: false });
+    fireEvent(canvas, nonPrimary);
+    fireEvent(canvas, pointEvent("pointerup", 40, 20, 20, { isPrimary: false }));
+    const rightClick = pointEvent("pointerdown", 41, 10, 10, { pointerType: "mouse", button: 2 });
+    fireEvent(canvas, rightClick);
+    fireEvent(canvas, pointEvent("pointerup", 41, 20, 20, { pointerType: "mouse", button: 2 }));
+    const middleClick = pointEvent("pointerdown", 42, 10, 10, { pointerType: "mouse", button: 1 });
+    fireEvent(canvas, middleClick);
+    fireEvent(canvas, pointEvent("pointerup", 42, 20, 20, { pointerType: "mouse", button: 1 }));
+
+    expect(nonPrimary.defaultPrevented).toBe(false);
+    expect(rightClick.defaultPrevented).toBe(false);
+    expect(middleClick.defaultPrevented).toBe(false);
+    expect(capture).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent(canvas, pointEvent("pointerdown", 43, 10, 10, { pointerType: "pen" }));
+    fireEvent(canvas, pointEvent("pointerup", 43, 20, 20, { pointerType: "pen" }));
+    fireEvent(canvas, pointEvent("pointerdown", 44, 10, 10, { pointerType: "mouse", button: 0 }));
+    fireEvent(canvas, pointEvent("pointerup", 44, 20, 20, { pointerType: "mouse", button: 0 }));
+    expect(capture).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenCalledTimes(2);
     animation.restore();
   });
 
