@@ -13,7 +13,12 @@ export function validateKanaEntries(entries: readonly KanaEntry[]): ContentIssue
   }
 
   for (const entry of entries) {
-    if (entry.distractors.length < 2 || entry.distractors.includes(entry.character)) {
+    const hasDuplicateDistractors = new Set(entry.distractors).size !== entry.distractors.length;
+    if (
+      entry.distractors.length !== 3
+      || hasDuplicateDistractors
+      || entry.distractors.includes(entry.character)
+    ) {
       issues.push({ code: "invalid-distractors", item: entry.character });
     }
   }

@@ -52,7 +52,10 @@ export const KANA_ENTRIES: readonly KanaEntry[] = [
   { character: "ん", illustrationKey: "kana-n-bread-ending", spokenLabel: "ぱんの さいごの、ん", row: "wa", distractors: ["あ", "け", "そ"], specialUsage: "wordEnding" },
 ];
 
-/** 指定文字の教材定義を返す。 */
+/**
+ * 指定文字の教材定義を返す。
+ * @throws 指定文字の教材定義が存在しない場合に例外を投げる。
+ */
 export function findKana(character: KanaCharacter): KanaEntry {
   const entry = KANA_ENTRIES.find((item) => item.character === character);
 

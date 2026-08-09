@@ -10,15 +10,31 @@ export const KANA_ORDER = [
 /** 五十音コンテンツで使用できる文字。 */
 export type KanaCharacter = (typeof KANA_ORDER)[number];
 
-/** 1文字の導入、選択問題、資産を結びつける教材定義。 */
-export interface KanaEntry {
-  readonly character: KanaCharacter;
+type KanaRow = "a" | "ka" | "sa" | "ta" | "na" | "ha" | "ma" | "ya" | "ra" | "wa";
+type RegularKanaCharacter = Exclude<KanaCharacter, "を" | "ん">;
+
+/** 特殊用法を除く、1文字教材に共通するデータ。 */
+interface KanaEntryBase {
   readonly illustrationKey: string;
   readonly spokenLabel: string;
-  readonly row: "a" | "ka" | "sa" | "ta" | "na" | "ha" | "ma" | "ya" | "ra" | "wa";
+  readonly row: KanaRow;
   readonly distractors: readonly KanaCharacter[];
-  readonly specialUsage?: "particle" | "wordEnding";
 }
+
+/** 1文字の導入、選択問題、資産を結びつける教材定義。 */
+export type KanaEntry =
+  | (KanaEntryBase & {
+    readonly character: RegularKanaCharacter;
+    readonly specialUsage?: never;
+  })
+  | (KanaEntryBase & {
+    readonly character: "を";
+    readonly specialUsage: "particle";
+  })
+  | (KanaEntryBase & {
+    readonly character: "ん";
+    readonly specialUsage: "wordEnding";
+  });
 
 /** 単語コースの難易度段階。 */
 export type WordStage = "W1" | "W2" | "W3" | "W4" | "W5";
