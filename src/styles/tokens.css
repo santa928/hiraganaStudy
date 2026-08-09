@@ -1,0 +1,10 @@
+:root {
+  --color-ink-indigo: #23335f;
+  --color-paper-cream: #fff4d7;
+  --color-sky: #dff3ff;
+  --color-grass: #77bd68;
+  --color-success: #5cae65;
+  --touch-target-primary: 64px;
+  --touch-target-secondary: 48px;
+  --space-page: 16px;
+}

@@ -1,0 +1,48 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-block-size: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-sky);
+  color: var(--color-ink-indigo);
+  font-family: "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif;
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  min-block-size: 100dvh;
+  padding-block: max(env(safe-area-inset-top), var(--space-page))
+    max(env(safe-area-inset-bottom), var(--space-page));
+  padding-inline: max(env(safe-area-inset-left), var(--space-page))
+    max(env(safe-area-inset-right), var(--space-page));
+  place-items: center;
+}
+
+.sound-gate {
+  display: grid;
+  inline-size: var(--touch-target-primary);
+  block-size: var(--touch-target-primary);
+  border: 3px solid var(--color-ink-indigo);
+  border-radius: 50%;
+  background: var(--color-paper-cream);
+  color: var(--color-ink-indigo);
+  cursor: pointer;
+  font-size: 2rem;
+  place-items: center;
+}
+
+.sound-gate:focus-visible {
+  outline: 4px solid var(--color-success);
+  outline-offset: 4px;
+}

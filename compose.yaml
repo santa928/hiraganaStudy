@@ -1,0 +1,18 @@
+services:
+  app:
+    image: node:22-bookworm-slim
+    working_dir: /workspace
+    ports:
+      - "5173:5173"
+      - "4173:4173"
+    environment:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+    volumes:
+      - .:/workspace
+      - node_modules:/workspace/node_modules
+      - playwright_browsers:/ms-playwright
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  node_modules:
+  playwright_browsers:
