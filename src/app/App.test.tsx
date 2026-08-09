@@ -253,6 +253,7 @@ describe("App", () => {
     await act(async () => { vi.advanceTimersByTime(2000); });
     fireEvent.pointerUp(gate, { pointerId: 1 });
     vi.useRealTimers();
+    expect(screen.getByText("PWA: このブラウザでは使えません")).toBeVisible();
     fireEvent.click(screen.getByRole("checkbox", { name: "こうかおん" }));
     await waitFor(() => expect(effects.applySettings).toHaveBeenLastCalledWith(expect.objectContaining({ effects: false })));
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ settings: expect.objectContaining({ effects: false }) })));

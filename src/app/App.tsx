@@ -18,6 +18,7 @@ import { WordLessonScreen } from "../features/words/WordLessonScreen";
 import { BrowserSpeechGuide } from "../platform/audio/BrowserSpeechGuide";
 import type { AudioGuide } from "../platform/audio/AudioGuide";
 import { SoundEffects } from "../platform/audio/SoundEffects";
+import { usePwaStatusLabel } from "../platform/pwa/PwaStatus";
 
 /** SoundEffectsの実装をブラウザAudioContextから切り離す最小の注入口。 */
 export interface AppSoundEffects {
@@ -89,6 +90,7 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
   const persistenceGenerationRef = useRef(0);
   const route = selectRoute(state.progress);
   const entry = useMemo(() => findKana(state.currentKana), [state.currentKana]);
+  const pwaStatus = usePwaStatusLabel();
 
   const dispatch = useCallback((event: LessonEvent): void => {
     setState((current) => reduceLesson(current, event));
@@ -265,7 +267,7 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     audioStatus: audio.getStatus(),
     storage: runtime.storageDegraded ? "fallback" : "normal",
     displayMode: getDisplayMode(),
-    pwaStatus: "未確認",
+    pwaStatus,
   };
   const wateringCan = getWorldIllustration("watering-can");
   const background = getWorldIllustration("garden-background");

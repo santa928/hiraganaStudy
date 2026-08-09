@@ -1,0 +1,59 @@
+name: GitHub Pagesへ公開
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ソースを取得
+        uses: actions/checkout@v7
+      - name: Node.jsを準備
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Pagesを準備
+        uses: actions/configure-pages@v6
+      - name: 依存関係を復元
+        run: npm ci
+      - name: テスト
+        run: npm test -- --run --maxWorkers=1
+      - name: 型を確認
+        run: npm run typecheck
+      - name: lint
+        run: npm run lint
+      - name: repository subpathでbuild
+        shell: bash
+        run: |
+          REPOSITORY_NAME="${GITHUB_REPOSITORY#*/}"
+          BASE_PATH="/${REPOSITORY_NAME}/" npm run build
+          npm run verify:pages-build -- "/${REPOSITORY_NAME}/"
+      - name: Pages artifactを作成
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Pagesへ反映
+        id: deployment
+        uses: actions/deploy-pages@v5
