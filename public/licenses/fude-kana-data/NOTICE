@@ -1,0 +1,25 @@
+fude-kana-data attribution and statement of changes
+===============================================
+
+Source data
+-----------
+Repository: karimghezali/fude-kana-data
+Fixed commit: ab69a27e2f5a5125ac89b5f13a1b0f0e318d5319
+Source URL: https://raw.githubusercontent.com/karimghezali/fude-kana-data/ab69a27e2f5a5125ac89b5f13a1b0f0e318d5319/kana-data/
+Original work: KanjiVG by Ulrich Apel
+KanjiVG source: https://kanjivg.tagaini.net/
+Licence: Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
+Licence URL: https://creativecommons.org/licenses/by-sa/3.0/
+
+Changes in this project
+-----------------------
+- Extracted the 46 basic hiragana and 19 additional word-writing characters.
+- Resampled every ordered stroke to exactly 48 points by arc length.
+- Normalised each character template into a shared 0..1 coordinate system.
+- Rounded generated point coordinates to four decimal places.
+- Preserved character identity, stroke order, direction, and isCurl values, including null angle values.
+
+Distribution
+------------
+The generated stroke data in src/features/writing/data/generated is a derivative work
+and is distributed under CC BY-SA 3.0.

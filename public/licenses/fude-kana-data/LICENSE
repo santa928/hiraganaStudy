@@ -1,0 +1,41 @@
+Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
+
+The data in this repository is a derivative work of KanjiVG (© Ulrich Apel),
+which is licensed under the Creative Commons Attribution-ShareAlike 3.0
+Unported licence. In accordance with the ShareAlike condition, this derivative
+work is distributed under the same licence.
+
+Human-readable summary:
+  https://creativecommons.org/licenses/by-sa/3.0/
+
+Full legal code:
+  https://creativecommons.org/licenses/by-sa/3.0/legalcode
+
+Summary of your rights and obligations
+--------------------------------------
+
+You are free to:
+  - Share — copy and redistribute the material in any medium or format
+  - Adapt — remix, transform, and build upon the material
+  for any purpose, including commercially.
+
+Under the following terms:
+  - Attribution — You must give appropriate credit to Ulrich Apel and KanjiVG,
+    provide a link to the licence, and indicate if changes were made.
+  - ShareAlike — If you remix, transform, or build upon the material, you must
+    distribute your contributions under the same licence as the original.
+  - No additional restrictions — You may not apply legal terms or technological
+    measures that legally restrict others from doing anything the licence
+    permits.
+
+Original work
+-------------
+KanjiVG — https://kanjivg.tagaini.net/
+Copyright © Ulrich Apel
+Licensed under CC BY-SA 3.0
+
+Derivative work
+---------------
+fude-kana-data — kana stroke-order data in JSON, derived from KanjiVG.
+Changes made are described in README.md and NOTICE.
+Licensed under CC BY-SA 3.0.
