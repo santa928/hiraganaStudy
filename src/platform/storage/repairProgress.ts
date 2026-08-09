@@ -3,6 +3,7 @@ import type { KanaCharacter } from "../../features/learning/content/types";
 import { createInitialProgress } from "../../features/learning/model/reducer";
 import type {
   KanaProgress,
+  LessonAttempt,
   LearningProgress,
   LearningSettings,
   LessonStage,
@@ -84,6 +85,23 @@ function repairRowReview(
   return { row: entry.row, step: isShapeReview ? "shape" : "sound" };
 }
 
+/** 旧v1保存を含め、現在の選択問題に一致する案内段階だけを復元する。 */
+function repairLessonAttempt(value: unknown, currentKana: KanaCharacter, stage: LessonStage): LessonAttempt | null {
+  if (!isRecord(value) || (stage !== "shapeMatch" && stage !== "soundMatch")) return null;
+
+  if (
+    value.character !== currentKana
+    || value.stage !== stage
+    || typeof value.count !== "number"
+    || !Number.isSafeInteger(value.count)
+    || value.count < 0
+  ) {
+    return null;
+  }
+
+  return { character: currentKana, stage, count: value.count };
+}
+
 /** 外部・旧形式の保存値を、現在の安全な学習進捗へ部分復旧する。
  *
  * 未知のスキーマは新規進捗へ戻し、既知スキーマでは壊れた文字・設定だけを初期値へ戻す。
@@ -122,6 +140,7 @@ export function repairProgress(raw: unknown): LearningProgress {
     rowReview: !allCompleted && hasValidCurrentKanaIndex && !positionChanged
       ? repairRowReview(raw.rowReview, currentKana, normalizedStage)
       : null,
+    lessonAttempt: repairLessonAttempt(raw.lessonAttempt, currentKana, normalizedStage),
     kana,
     words: {},
     settings: repairSettings(raw.settings, initial.settings),

@@ -31,6 +31,31 @@ describe("repairProgress", () => {
     });
   });
 
+  it("旧schema v1保存にないlessonAttemptをnullへ後方互換で補正する", () => {
+    const raw = resumableProgressAt("く", "traceNarrow") as Record<string, unknown>;
+    delete raw.lessonAttempt;
+
+    expect(repairProgress(raw).lessonAttempt).toBeNull();
+  });
+
+  it("現在の文字と選択段階に整合するlessonAttemptだけを保存する", () => {
+    const raw = {
+      ...resumableProgressAt("く", "shapeMatch"),
+      lessonAttempt: { character: "く", stage: "shapeMatch", count: 2 },
+    };
+
+    expect(repairProgress(raw).lessonAttempt).toEqual({ character: "く", stage: "shapeMatch", count: 2 });
+  });
+
+  it("現在段階と矛盾するlessonAttemptは進行を壊さずnullへ補正する", () => {
+    const raw = {
+      ...resumableProgressAt("く", "soundMatch"),
+      lessonAttempt: { character: "く", stage: "shapeMatch", count: 2 },
+    };
+
+    expect(repairProgress(raw).lessonAttempt).toBeNull();
+  });
+
   it("壊れた文字だけを初期化し、正常な文字進捗は保持する", () => {
     const raw = structuredClone(progressAt("く", "traceNarrow")) as {
       kana: Record<string, unknown>;

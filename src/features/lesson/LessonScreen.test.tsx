@@ -1,8 +1,10 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
+import { vi } from "vitest";
 
 import { renderLesson } from "../../test/renderLesson";
 import { KANA_ORDER } from "../learning/content/kana";
 import { createLessonChoices } from "./LessonScreen";
+import type { AudioGuide } from "../../platform/audio/AudioGuide";
 
 describe("LessonScreen", () => {
   it("形合わせは問題に絵と大きな文字を出し、選択肢を文字だけにする", () => {
@@ -111,6 +113,16 @@ describe("LessonScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "つぎへ" }));
     expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceNarrow");
     expect(screen.getByRole("button", { name: "つぎへ" })).toBeDisabled();
+
+    drawOneStroke();
+    fireEvent.click(screen.getByRole("button", { name: "つぎへ" }));
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "copyWithModel");
+    expect(screen.getByRole("button", { name: "つぎへ" })).toBeDisabled();
+
+    drawOneStroke();
+    fireEvent.click(screen.getByRole("button", { name: "つぎへ" }));
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "freeWrite");
+    expect(screen.getByRole("button", { name: "つぎへ" })).toBeDisabled();
   });
 
   it("自由書字は見本を隠して始め、明示tapで表示と非表示を切り替える", () => {
@@ -129,5 +141,26 @@ describe("LessonScreen", () => {
 
     expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-reduced-motion", "true");
     expect(screen.getByRole("button", { name: "もじ あ" })).toHaveAttribute("data-guided", "true");
+  });
+
+  it("unlock待ちの再生は段階が変わったら古い案内を読み上げない", async () => {
+    let resolveUnlock: ((status: "ready") => void) | undefined;
+    const audio: AudioGuide = {
+      unlock: vi.fn(() => new Promise<"ready">((resolve) => { resolveUnlock = resolve; })),
+      speak: vi.fn(() => Promise.resolve()),
+      cancel: vi.fn(),
+      getStatus: vi.fn<() => "locked">(() => "locked"),
+    };
+    const { rerender } = renderLesson({ currentKana: "あ", stage: "shapeMatch", audio });
+    vi.mocked(audio.speak).mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "こえを もういちど きく" }));
+    rerender({ currentKana: "あ", stage: "soundMatch", audio });
+    await act(async () => {
+      resolveUnlock?.("ready");
+      await Promise.resolve();
+    });
+
+    expect(audio.speak).not.toHaveBeenCalledWith("おなじ かたちの あ を さがそう", { interrupt: true });
   });
 });

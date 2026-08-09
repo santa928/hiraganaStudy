@@ -2,6 +2,7 @@ import { KANA_ORDER } from "../content/kana";
 import type { KanaCharacter, KanaEntry } from "../content/types";
 import type {
   KanaProgress,
+  LessonAttempt,
   LearningProgress,
   LearningState,
   LessonEvent,
@@ -46,6 +47,7 @@ export function createInitialProgress(): LearningProgress {
     currentKanaIndex: 0,
     stage: "intro",
     rowReview: null,
+    lessonAttempt: null,
     kana: Object.fromEntries(
       KANA_ORDER.map((character) => [character, createInitialKanaProgress()]),
     ) as Record<KanaCharacter, KanaProgress>,
@@ -139,11 +141,50 @@ function isValidKanaProgress(progress: unknown): progress is KanaProgress {
   );
 }
 
+/** 現在文字・現在段階と一致する選択問題の案内段階だけを保存する。 */
+function normalizeLessonAttempt(progress: LearningProgress): LessonAttempt | null {
+  const attempt = progress.lessonAttempt;
+  const currentKana = KANA_ORDER[progress.currentKanaIndex];
+
+  if (
+    !attempt
+    || !currentKana
+    || attempt.character !== currentKana
+    || attempt.stage !== progress.stage
+    || (attempt.stage !== "shapeMatch" && attempt.stage !== "soundMatch")
+    || !Number.isSafeInteger(attempt.count)
+    || attempt.count < 0
+  ) {
+    return null;
+  }
+
+  return attempt;
+}
+
+/** 段階遷移・文字遷移で古い選択問題の案内段階を消す。 */
+function withNormalizedLessonAttempt(progress: LearningProgress): LearningProgress {
+  return { ...progress, lessonAttempt: normalizeLessonAttempt(progress) };
+}
+
+/** 誤答と同時に、現在の選択問題だけの案内段階を一つ進める。 */
+function recordWrongAnswer(state: LearningState, stage: LessonAttempt["stage"]): LearningState {
+  const currentAttempt = state.progress.lessonAttempt;
+  const count = currentAttempt?.character === state.currentKana && currentAttempt.stage === stage
+    ? currentAttempt.count + 1
+    : 1;
+
+  return updateCurrentKana(
+    state,
+    (current) => ({ ...current, guideCount: current.guideCount + 1 }),
+    { lessonAttempt: { character: state.currentKana, stage, count } },
+  );
+}
+
 /** 現在文字の進捗だけを不変に更新する。 */
 function updateCurrentKana(
   state: LearningState,
   update: (current: KanaProgress) => KanaProgress,
-  updates: Partial<Pick<LearningProgress, "currentKanaIndex" | "stage" | "rowReview">> = {},
+  updates: Partial<Pick<LearningProgress, "currentKanaIndex" | "stage" | "rowReview" | "lessonAttempt">> = {},
 ): LearningState {
   const progress: LearningProgress = {
     ...state.progress,
@@ -154,15 +195,15 @@ function updateCurrentKana(
     },
   };
 
-  return stateFromProgress(progress);
+  return stateFromProgress(withNormalizedLessonAttempt(progress));
 }
 
 /** 現在文字を変えず、段階または行復習だけを不変に更新する。 */
 function updateProgress(
   state: LearningState,
-  updates: Partial<Pick<LearningProgress, "currentKanaIndex" | "stage" | "rowReview">>,
+  updates: Partial<Pick<LearningProgress, "currentKanaIndex" | "stage" | "rowReview" | "lessonAttempt">>,
 ): LearningState {
-  return stateFromProgress({ ...state.progress, ...updates });
+  return stateFromProgress(withNormalizedLessonAttempt({ ...state.progress, ...updates }));
 }
 
 /** 行末の復習完了後、次の文字または単語コースへ進める。 */
@@ -213,7 +254,9 @@ function getKanaRow(character: KanaCharacter): KanaEntry["row"] {
 /** 学習イベントを処理し、入力を変更せず次の状態を返す。 */
 export function reduceLesson(state: LearningState, event: LessonEvent): LearningState {
   if (event.type === "RESUME") {
-    return stateFromProgress(isResumableProgress(event.progress) ? event.progress : createInitialProgress());
+    return stateFromProgress(isResumableProgress(event.progress)
+      ? withNormalizedLessonAttempt(event.progress)
+      : createInitialProgress());
   }
 
   if (event.type === "START" && state.stage === "intro") {
@@ -228,7 +271,7 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
 
   if (event.type === "ANSWER_SHAPE" && state.stage === "shapeMatch") {
     if (!event.correct) {
-      return updateCurrentKana(state, (current) => ({ ...current, guideCount: current.guideCount + 1 }));
+      return recordWrongAnswer(state, "shapeMatch");
     }
 
     if (state.progress.rowReview?.step === "shape") {
@@ -243,7 +286,7 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
 
   if (event.type === "ANSWER_SOUND" && state.stage === "soundMatch") {
     if (!event.correct) {
-      return updateCurrentKana(state, (current) => ({ ...current, guideCount: current.guideCount + 1 }));
+      return recordWrongAnswer(state, "soundMatch");
     }
 
     if (state.progress.rowReview?.step === "sound") {

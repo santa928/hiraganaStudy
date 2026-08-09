@@ -45,12 +45,20 @@ export interface RowReviewProgress {
   readonly step: "shape" | "sound";
 }
 
+/** 現在の形・音合わせでだけ使う、画面をまたいで続く案内段階。 */
+export interface LessonAttempt {
+  readonly character: KanaCharacter;
+  readonly stage: "shapeMatch" | "soundMatch";
+  readonly count: number;
+}
+
 /** 端末保存する学習全体の進捗。 */
 export interface LearningProgress {
   readonly schemaVersion: 1;
   readonly currentKanaIndex: number;
   readonly stage: LessonStage;
   readonly rowReview: RowReviewProgress | null;
+  readonly lessonAttempt: LessonAttempt | null;
   readonly kana: Readonly<Record<KanaCharacter, KanaProgress>>;
   readonly words: Readonly<Record<string, WordProgress>>;
   readonly settings: LearningSettings;

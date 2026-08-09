@@ -1,9 +1,13 @@
 import { KANA_ORDER, type KanaCharacter } from "../../features/learning/content/types";
 import { createInitialProgress } from "../../features/learning/model/reducer";
-import type { LearningProgress, LearningState, LessonStage } from "../../features/learning/model/types";
+import type { LearningProgress, LearningState, LessonAttempt, LessonStage } from "../../features/learning/model/types";
 
 /** 指定文字・段階で再開するための保存進捗を作るテストfixture。 */
-export function progressAt(character: KanaCharacter, stage: LessonStage): LearningProgress {
+export function progressAt(
+  character: KanaCharacter,
+  stage: LessonStage,
+  lessonAttempt: LessonAttempt | null = null,
+): LearningProgress {
   const initial = createInitialProgress();
   const currentKanaIndex = KANA_ORDER.indexOf(character);
 
@@ -11,6 +15,7 @@ export function progressAt(character: KanaCharacter, stage: LessonStage): Learni
     ...initial,
     currentKanaIndex,
     stage,
+    lessonAttempt,
   };
 }
 

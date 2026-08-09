@@ -12,6 +12,7 @@ export interface RenderLessonOptions {
   readonly stage: LessonStage;
   readonly audioStatus?: AudioGuideStatus;
   readonly reducedMotion?: boolean;
+  readonly audio?: AudioGuide;
 }
 
 /** 状態遷移を実際のreducerへ通す、例外を出さないテスト用音声。 */
@@ -39,7 +40,7 @@ export function renderLesson(options: RenderLessonOptions): { rerender: (next: R
     };
   };
   let state = createState(options);
-  const audio = new FakeAudioGuide(options.audioStatus ?? "ready");
+  const audio = options.audio ?? new FakeAudioGuide(options.audioStatus ?? "ready");
   const renderResult: { current: ReturnType<typeof render> | null } = { current: null };
   const draw = (): React.JSX.Element => <LessonScreen state={state} audio={audio} dispatch={(event) => {
     state = reduceLesson(state, event);

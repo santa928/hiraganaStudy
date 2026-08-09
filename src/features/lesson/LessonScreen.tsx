@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type { AudioGuide } from "../../platform/audio/AudioGuide";
 import { useFullscreen } from "../../platform/fullscreen/useFullscreen";
@@ -70,27 +70,38 @@ export function LessonScreen({ state, dispatch, audio }: LessonScreenProps): Rea
   const wateringCan = getWorldIllustration("watering-can");
   const { isFullscreen, toggleFullscreen } = useFullscreen();
   const mountedRef = useRef(true);
+  const replayRequestRef = useRef(0);
   const choices = useMemo(() => createLessonChoices(entry.character), [entry.character]);
   const isChoiceStage = state.stage === "shapeMatch" || state.stage === "soundMatch";
   const stageIdentity = `${state.currentKana}-${state.stage}`;
-  const [attemptState, setAttemptState] = useState({ identity: stageIdentity, count: 0 });
-  const stageAttempts = attemptState.identity === stageIdentity ? attemptState.count : 0;
+  const stageAttempts = state.progress.lessonAttempt?.character === state.currentKana
+    && state.progress.lessonAttempt.stage === state.stage
+    ? state.progress.lessonAttempt.count
+    : 0;
   const guideKey: GuideKey = state.stage === "shapeMatch"
     ? stageAttempts >= 3 ? "show" : stageAttempts >= 1 ? "again" : "shape"
     : state.stage === "soundMatch"
       ? stageAttempts >= 3 ? "show" : stageAttempts >= 1 ? "again" : "sound"
       : state.stage;
   const guide = guideMessage(guideKey, entry.character);
+  const stageIdentityRef = useRef(stageIdentity);
+  const guideRef = useRef(guide);
+  stageIdentityRef.current = stageIdentity;
+  guideRef.current = guide;
 
   useEffect(() => {
     preloadLessonImages(state.currentKana);
   }, [state.currentKana]);
 
   useEffect(() => {
+    replayRequestRef.current += 1;
     audio.cancel();
     void audio.speak(guide, { interrupt: true });
-    return () => audio.cancel();
-  }, [audio, guide, state.stage]);
+    return () => {
+      replayRequestRef.current += 1;
+      audio.cancel();
+    };
+  }, [audio, guide, stageIdentity]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -98,6 +109,10 @@ export function LessonScreen({ state, dispatch, audio }: LessonScreenProps): Rea
   }, []);
 
   const replayGuide = (): void => {
+    const requestId = replayRequestRef.current + 1;
+    const requestedStageIdentity = stageIdentity;
+    const requestedGuide = guide;
+    replayRequestRef.current = requestId;
     audio.cancel();
     const replay = async (): Promise<void> => {
       if (audio.getStatus() !== "ready") {
@@ -107,8 +122,13 @@ export function LessonScreen({ state, dispatch, audio }: LessonScreenProps): Rea
           return;
         }
       }
-      if (!mountedRef.current) return;
-      await audio.speak(guide, { interrupt: true });
+      if (
+        !mountedRef.current
+        || replayRequestRef.current !== requestId
+        || stageIdentityRef.current !== requestedStageIdentity
+        || guideRef.current !== requestedGuide
+      ) return;
+      await audio.speak(requestedGuide, { interrupt: true });
     };
     void replay();
   };
@@ -118,18 +138,14 @@ export function LessonScreen({ state, dispatch, audio }: LessonScreenProps): Rea
     const event: LessonEvent = state.stage === "shapeMatch"
       ? { type: "ANSWER_SHAPE", correct }
       : { type: "ANSWER_SOUND", correct };
-    if (!correct) {
-      const nextAttempts = stageAttempts + 1;
-      setAttemptState({ identity: stageIdentity, count: nextAttempts });
-    }
     dispatch(event);
   };
 
   const writing = (): React.JSX.Element | null => {
-    if (state.stage === "traceWide") return <WritingStep character={entry.character} mode="traceWide" onComplete={() => dispatch({ type: "COMPLETE_TRACE", width: "wide" })} />;
-    if (state.stage === "traceNarrow") return <WritingStep character={entry.character} mode="traceNarrow" onComplete={() => dispatch({ type: "COMPLETE_TRACE", width: "narrow" })} />;
-    if (state.stage === "copyWithModel") return <WritingStep character={entry.character} mode="copyWithModel" onComplete={() => dispatch({ type: "COMPLETE_COPY" })} />;
-    if (state.stage === "freeWrite") return <WritingStep character={entry.character} mode="freeWrite" onComplete={() => dispatch({ type: "COMPLETE_FREE_WRITE" })} onSkip={() => dispatch({ type: "SKIP_FREE_WRITE" })} />;
+    if (state.stage === "traceWide") return <WritingStep key={`${entry.character}-traceWide`} character={entry.character} mode="traceWide" onComplete={() => dispatch({ type: "COMPLETE_TRACE", width: "wide" })} />;
+    if (state.stage === "traceNarrow") return <WritingStep key={`${entry.character}-traceNarrow`} character={entry.character} mode="traceNarrow" onComplete={() => dispatch({ type: "COMPLETE_TRACE", width: "narrow" })} />;
+    if (state.stage === "copyWithModel") return <WritingStep key={`${entry.character}-copyWithModel`} character={entry.character} mode="copyWithModel" onComplete={() => dispatch({ type: "COMPLETE_COPY" })} />;
+    if (state.stage === "freeWrite") return <WritingStep key={`${entry.character}-freeWrite`} character={entry.character} mode="freeWrite" onComplete={() => dispatch({ type: "COMPLETE_FREE_WRITE" })} onSkip={() => dispatch({ type: "SKIP_FREE_WRITE" })} />;
     return null;
   };
 

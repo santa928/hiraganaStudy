@@ -18,7 +18,7 @@ export function PromptCard({ entry, showCharacter, emphasized = false }: PromptC
   const imageSource = retryIndex === 0 ? asset.src : `${asset.src}?retry=${retryIndex}`;
 
   return (
-    <section className="promptCard" aria-label={`${entry.character} の おだい`}>
+    <section className={`promptCard ${showCharacter ? "" : "promptCard--illustrationOnly"}`} aria-label={`${entry.character} の おだい`}>
       {showCharacter ? (
         <p className={`promptCard__character ${emphasized ? "promptCard__character--guide" : ""}`} data-testid="prompt-character">
           {entry.character}

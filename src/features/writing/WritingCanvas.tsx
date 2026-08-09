@@ -166,6 +166,8 @@ export function WritingCanvas({ template, mode, resetKey, disabled = false, onCh
   const sizeRef = useRef({ width: 0, height: 0 });
   const [guideTime, setGuideTime] = useState(0);
   const [successTime, setSuccessTime] = useState(0);
+  const drawingRef = useRef({ template, mode, guideTime });
+  drawingRef.current = { template, mode, guideTime };
 
   const requestDraw = useCallback((): void => {
     if (frameRef.current !== null) return;
@@ -194,7 +196,8 @@ export function WritingCanvas({ template, mode, resetKey, disabled = false, onCh
         const { width, height } = sizeRef.current;
         context.setTransform(canvasDpr(), 0, 0, canvasDpr(), 0, 0);
         context.clearRect(0, 0, width, height);
-        drawGuide(context, template, mode, width, height, guideTime);
+        const drawing = drawingRef.current;
+        drawGuide(context, drawing.template, drawing.mode, width, height, drawing.guideTime);
         for (const stroke of committedRef.current) drawStroke(context, stroke, width, height, Math.min(width, height) * 0.045, "#263f73");
         if (activeStrokeRef.current) drawStroke(context, activeStrokeRef.current, width, height, Math.min(width, height) * 0.045, "#263f73");
       }
@@ -203,7 +206,7 @@ export function WritingCanvas({ template, mode, resetKey, disabled = false, onCh
         performanceMarkCount += 1;
       }
     });
-  }, [guideTime, mode, template]);
+  }, []);
 
   const resizeCanvas = useCallback((): void => {
     const surface = surfaceRef.current;
