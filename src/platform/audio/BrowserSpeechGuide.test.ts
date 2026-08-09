@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BrowserSpeechGuide, type SpeechSynthesisLike, type SpeechUtteranceLike, type SpeechVoiceLike } from "./BrowserSpeechGuide";
 
@@ -57,6 +57,10 @@ function createGuide(speech = new FakeSpeechSynthesis()): { guide: BrowserSpeech
 }
 
 describe("BrowserSpeechGuide", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("unlockでja-JP完全一致の音声を優先して準備する", async () => {
     const { guide, speech } = createGuide();
     const fallback = { lang: "en-US", default: true };
@@ -93,6 +97,14 @@ describe("BrowserSpeechGuide", () => {
     await fallbackSpeechPromise;
   });
 
+  it("日本語でもdefaultでもない音声しかなければvisual-onlyへ劣化する", async () => {
+    const { guide, speech } = createGuide();
+    speech.voices = [{ lang: "en-US", default: false }];
+
+    await expect(guide.unlock()).resolves.toBe("visual-only");
+    expect(guide.getStatus()).toBe("visual-only");
+  });
+
   it("遅延したvoiceschangedで音声を選び、listenerを後始末する", async () => {
     const { guide, speech } = createGuide();
     const unlocking = guide.unlock();
@@ -117,15 +129,41 @@ describe("BrowserSpeechGuide", () => {
 
   it("多重unlockを安全に共用し、待機timerも一度だけ作る", async () => {
     vi.useFakeTimers();
-    const { guide, speech } = createGuide();
-    const first = guide.unlock();
-    const second = guide.unlock();
-    expect(speech.listenerCount()).toBe(1);
-    await vi.advanceTimersByTimeAsync(20);
-    await expect(first).resolves.toBe("visual-only");
-    await expect(second).resolves.toBe("visual-only");
-    expect(speech.listenerCount()).toBe(0);
-    vi.useRealTimers();
+    try {
+      const { guide, speech } = createGuide();
+      const first = guide.unlock();
+      const second = guide.unlock();
+      expect(speech.listenerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(20);
+      await expect(first).resolves.toBe("visual-only");
+      await expect(second).resolves.toBe("visual-only");
+      expect(speech.listenerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("visual-only後もunlockを再試行し、後着voiceで同時要求を一度だけreadyへ回復する", async () => {
+    vi.useFakeTimers();
+    try {
+      const { guide, speech } = createGuide();
+      const unavailable = guide.unlock();
+      await vi.advanceTimersByTimeAsync(20);
+      await expect(unavailable).resolves.toBe("visual-only");
+
+      const firstRetry = guide.unlock();
+      const secondRetry = guide.unlock();
+      expect(speech.listenerCount()).toBe(1);
+      speech.voices = [{ lang: "ja-JP", default: true }];
+      speech.emitVoicesChanged();
+
+      await expect(firstRetry).resolves.toBe("ready");
+      await expect(secondRetry).resolves.toBe("ready");
+      expect(speech.listenerCount()).toBe(0);
+      await expect(guide.unlock()).resolves.toBe("ready");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("新しい案内は古い発話を中止し、cancelされたPromiseも解決する", async () => {

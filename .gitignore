@@ -6,5 +6,6 @@ playwright-report/
 test-results/
 progress.md
 docs/superpowers/
+.superpowers/
 .DS_Store
 *.log

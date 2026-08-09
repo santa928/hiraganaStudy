@@ -59,8 +59,12 @@ export class BrowserSpeechGuide implements AudioGuide {
 
   /** 利用者の明示操作後に日本語音声を選択し、利用状態を返す。 */
   public unlock(): Promise<Exclude<AudioGuideStatus, "locked">> {
-    if (this.status !== "locked") return Promise.resolve(this.status);
+    if (this.status === "ready") return Promise.resolve(this.status);
     if (this.unlockPromise) return this.unlockPromise;
+
+    // 日本語音声が後からインストール・読み込みされる端末では再試行を許可する。
+    this.status = "locked";
+    this.selectedVoice = null;
 
     const speech = this.options.speechSynthesis ?? browserSpeechSynthesis();
     const createUtterance = this.options.createUtterance ?? browserUtteranceFactory();
@@ -165,7 +169,6 @@ export class BrowserSpeechGuide implements AudioGuide {
     return voices.find((voice) => voice.lang.toLowerCase() === "ja-jp")
       ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("ja"))
       ?? voices.find((voice) => voice.default)
-      ?? voices[0]
       ?? null;
   }
 

@@ -27,9 +27,11 @@ export interface AudioBufferSourceLike {
 /** SoundEffectsが必要とするAudioContextの最小契約。 */
 export interface AudioContextLike {
   readonly destination: unknown;
+  readonly state?: AudioContextState;
   createGain(): GainNodeLike;
   createBufferSource(): AudioBufferSourceLike;
   decodeAudioData(data: ArrayBuffer): Promise<AudioBuffer>;
+  resume?(): Promise<void>;
 }
 
 /** SoundEffectsへ注入できるブラウザ依存とアセット起点。 */
@@ -59,6 +61,8 @@ export class SoundEffects {
   private readonly buffers = new Map<string, Promise<AudioBuffer | null>>();
   private settings: SoundSettings = DEFAULT_SETTINGS;
   private gardenSource: AudioBufferSourceLike | null = null;
+  private gardenStart: Promise<void> | null = null;
+  private gardenGeneration = 0;
 
   public constructor(private readonly options: SoundEffectsOptions = {}) {
     this.context = options.audioContext === undefined ? createBrowserAudioContext() : options.audioContext;
@@ -101,23 +105,29 @@ export class SoundEffects {
   /** 指定効果音を一度だけ鳴らす。無効設定や障害時は何もしない。 */
   public async play(name: SoundEffectName): Promise<void> {
     if (!this.settings.effects) return;
+    if (!await this.resumeForUserAction()) return;
     await this.playBuffer(name, this.effectsGain, false);
   }
 
   /** 庭のループBGMを開始する。同じBGMを重ねて開始しない。 */
   public async startGardenLoop(): Promise<void> {
     if (!this.settings.music || this.gardenSource) return;
-    const source = await this.playBuffer("garden-loop", this.musicGain, true);
-    if (source) {
-      this.gardenSource = source;
-      source.onended = () => {
-        if (this.gardenSource === source) this.gardenSource = null;
-      };
-    }
+    if (this.gardenStart) return this.gardenStart;
+
+    const generation = this.gardenGeneration;
+    const starting = this.startGardenLoopForGeneration(generation);
+    this.gardenStart = starting;
+    const clearInFlight = (): void => {
+      if (this.gardenStart === starting) this.gardenStart = null;
+    };
+    void starting.then(clearInFlight, clearInFlight);
+    return starting;
   }
 
   /** 庭のBGMを安全に停止する。 */
   public stopGardenLoop(): void {
+    this.gardenGeneration += 1;
+    this.gardenStart = null;
     const source = this.gardenSource;
     this.gardenSource = null;
     if (!source) return;
@@ -134,6 +144,42 @@ export class SoundEffects {
     try {
       const buffer = await this.loadBuffer(name);
       if (!buffer) return null;
+      return this.startBuffer(buffer, gain, loop);
+    } catch {
+      return null;
+    }
+  }
+
+  /** URL取得とdecodeの失敗をnullへ変換してキャッシュする。 */
+  private loadBuffer(name: SoundEffectName | "garden-loop"): Promise<AudioBuffer | null> {
+    const url = this.assetUrl(name);
+    const cached = this.buffers.get(url);
+    if (cached) return cached;
+    const loading = this.decode(url).then((buffer) => {
+      if (!buffer) this.buffers.delete(url);
+      return buffer;
+    });
+    this.buffers.set(url, loading);
+    return loading;
+  }
+
+  /** BGM開始要求を一世代に束ね、停止済みの非同期要求は再生しない。 */
+  private async startGardenLoopForGeneration(generation: number): Promise<void> {
+    if (!await this.resumeForUserAction()) return;
+    const buffer = await this.loadBuffer("garden-loop");
+    if (!buffer || generation !== this.gardenGeneration || !this.settings.music || this.gardenSource || !this.musicGain) return;
+    const source = this.startBuffer(buffer, this.musicGain, true);
+    if (!source) return;
+    this.gardenSource = source;
+    source.onended = () => {
+      if (this.gardenSource === source) this.gardenSource = null;
+    };
+  }
+
+  /** AudioBufferをsourceへ接続して再生し、失敗をnullへ変換する。 */
+  private startBuffer(buffer: AudioBuffer, gain: GainNodeLike, loop: boolean): AudioBufferSourceLike | null {
+    if (!this.context) return null;
+    try {
       const source = this.context.createBufferSource();
       source.buffer = buffer;
       source.loop = loop;
@@ -145,14 +191,16 @@ export class SoundEffects {
     }
   }
 
-  /** URL取得とdecodeの失敗をnullへ変換してキャッシュする。 */
-  private loadBuffer(name: SoundEffectName | "garden-loop"): Promise<AudioBuffer | null> {
-    const url = this.assetUrl(name);
-    const cached = this.buffers.get(url);
-    if (cached) return cached;
-    const loading = this.decode(url);
-    this.buffers.set(url, loading);
-    return loading;
+  /** suspendedなAudioContextをユーザー操作開始時だけ安全に復帰する。 */
+  private async resumeForUserAction(): Promise<boolean> {
+    if (!this.context || this.context.state !== "suspended") return this.context !== null;
+    if (!this.context.resume) return false;
+    try {
+      await this.context.resume();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** アセットを取得してAudioBufferへdecodeする。 */

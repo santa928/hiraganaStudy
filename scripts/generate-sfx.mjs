@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUTPUT_DIRECTORY = resolve(ROOT_DIRECTORY, "public/assets/sfx");
+const VERIFY_DIRECTORY = resolve(process.env.SFX_VERIFY_DIRECTORY ?? OUTPUT_DIRECTORY);
 const MAX_PEAK = 10 ** (-12 / 20);
 const ATTACK_SECONDS = 0.005;
 
@@ -129,9 +130,10 @@ async function generate() {
 /** 既存WAVを再生成せずに仕様値だけ検査する。 */
 async function verify() {
   for (const specification of SFX) {
-    const expectedFrames = Math.round(specification.sampleRate * (specification.name === "tap.wav" ? 0.045 : specification.name === "success.wav" ? 0.42 : specification.name === "sprout.wav" ? 0.28 : 12));
-    const bytes = await readFile(resolve(OUTPUT_DIRECTORY, specification.name));
-    const verification = verifyWav(bytes, { ...specification, frameCount: expectedFrames });
+    const expected = encodeWav(specification.samples(), specification.sampleRate);
+    const bytes = await readFile(resolve(VERIFY_DIRECTORY, specification.name));
+    const verification = verifyWav(bytes, { ...specification, frameCount: specification.samples().length });
+    if (bytes.length !== expected.length || !bytes.equals(expected)) throw new Error(`${specification.name}: bytes differ from deterministic specification`);
     console.log(`${specification.name}: verified ${verification.frameCount} frames peak=${verification.peak.toFixed(5)}`);
   }
 }
