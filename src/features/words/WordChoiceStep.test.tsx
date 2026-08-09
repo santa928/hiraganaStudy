@@ -24,4 +24,12 @@ describe("WordChoiceStep", () => {
     await user.click(screen.getByRole("button", { name: "かき" }));
     expect(screen.getByTestId("word-choice").querySelector("[data-layout='word-card']")).toHaveAttribute("data-guide", "2");
   });
+
+  it("5文字以上の選択肢は1列の折返さない単語レイアウトとして印を付ける", () => {
+    render(<WordChoiceStep word={{ id: "w5-06", text: "しょうぼうしゃ", stage: "W5", spokenLabel: "しょうぼうしゃ", illustrationKey: "w5-06", writingCells: ["し"] }} choices={["しょうぼうしゃ", "くるま", "でんしゃ"]} audio={{ cancel: vi.fn(), getStatus: () => "visual-only", unlock: vi.fn(), speak: vi.fn() }} speechEnabled={false} onComplete={vi.fn()} />);
+
+    const choices = screen.getByLabelText("ことばを えらぶ");
+    expect(choices).toHaveAttribute("data-long", "true");
+    expect(screen.getByRole("button", { name: "しょうぼうしゃ" })).toBeVisible();
+  });
 });

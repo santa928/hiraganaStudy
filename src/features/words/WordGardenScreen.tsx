@@ -36,9 +36,9 @@ export function WordGardenScreen({ progress, onStart, onReview, onBackToGarden }
   const nextWordId = findNextWordId(progress);
   const nextWord = WORD_ENTRIES.find((word) => word.id === nextWordId);
 
-  return <main className="wordGarden" data-testid="word-garden">
+  return <main className="wordGarden" data-testid="word-garden" data-layout="word-garden-root">
     <header className="wordGarden__header"><p>ことばの にわ</p><button className="wordGarden__back" type="button" onClick={onBackToGarden}>もじの にわへ</button></header>
-    <section className="wordGarden__beds" aria-label="5つの ことばの はなだん">
+    <section className="wordGarden__beds" data-layout="word-garden-beds" aria-label="5つの ことばの はなだん">
       {STAGES.map((stage) => <section className="wordGarden__bed" key={stage} data-current={nextWord?.stage === stage || undefined}>
         <h2>{STAGE_LABELS[stage]}</h2>
         <div>{WORD_ENTRIES.filter((word) => word.stage === stage).map((word) => isComplete(progress, word.id)

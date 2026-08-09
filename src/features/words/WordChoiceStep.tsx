@@ -19,6 +19,7 @@ export function WordChoiceStep({ word, choices, audio, speechEnabled, reducedMot
   const illustration = getWordIllustration(word.illustrationKey);
   const [imageFailed, setImageFailed] = useState(false);
   const [guideKey, setGuideKey] = useState(0);
+  const hasLongChoice = choices.some((choice) => [...choice].length >= 5);
 
   useEffect(() => {
     audio.cancel();
@@ -44,7 +45,7 @@ export function WordChoiceStep({ word, choices, audio, speechEnabled, reducedMot
         ? <button className="wordLesson__imageFallback" type="button" aria-label="えを もういちど みる" onClick={() => setImageFailed(false)}><span aria-hidden="true" /><small>えを もういちど みる</small></button>
         : <img className="wordLesson__illustration" src={illustration.src} alt="" width={illustration.width} height={illustration.height} onError={() => setImageFailed(true)} />}
     </div>
-    <div className="wordLesson__choices" aria-label="ことばを えらぶ">
+    <div className="wordLesson__choices" data-long={hasLongChoice || undefined} aria-label="ことばを えらぶ">
       {choices.map((choice) => <button className="wordLesson__choiceButton" key={choice} type="button" onClick={() => choose(choice)}>{choice}</button>)}
     </div>
   </section>;

@@ -30,4 +30,13 @@ describe("WordGardenScreen", () => {
     await user.click(back);
     expect(onBackToGarden).toHaveBeenCalledOnce();
   });
+
+  it("花壇だけをスクロール対象にし、root・戻る操作・CTAを計測可能にする", () => {
+    render(<WordGardenScreen progress={createInitialProgress()} onStart={vi.fn()} onReview={vi.fn()} onBackToGarden={vi.fn()} />);
+
+    expect(screen.getByTestId("word-garden")).toHaveAttribute("data-layout", "word-garden-root");
+    expect(screen.getByLabelText("5つの ことばの はなだん")).toHaveAttribute("data-layout", "word-garden-beds");
+    expect(screen.getByRole("button", { name: "もじの にわへ" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "ことばを そだてよう" })).toBeVisible();
+  });
 });
