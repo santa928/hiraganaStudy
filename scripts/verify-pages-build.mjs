@@ -34,6 +34,9 @@ export function findPagesBuildIssues({ basePath, html, manifest, artifactPaths, 
       issues.push(`HTML asset URL が ${basePath} 配下ではありません: ${url}`);
     }
   }
+  const faviconTag = html.match(/<link\b[^>]*\brel=["']icon["'][^>]*>/i)?.[0] ?? "";
+  const faviconHref = faviconTag.match(/\bhref=["']([^"']+)["']/i)?.[1] ?? "";
+  if (faviconHref !== `${basePath}icons/icon-192.png`) issues.push(`favicon が ${basePath}icons/icon-192.png ではありません`);
 
   if (manifest.name !== "ひらがなのにわ") issues.push("manifest name が不正です");
   if (manifest.short_name !== "ひらがな") issues.push("manifest short_name が不正です");

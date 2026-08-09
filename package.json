@@ -13,10 +13,12 @@
     "lint": "eslint .",
     "generate:pwa-icons": "node scripts/generate-pwa-icons.mjs",
     "verify:pages-build": "node scripts/verify-pages-build.mjs",
+    "verify:game": "node tests/game/run-scenarios.mjs",
+    "verify:layout": "node tests/game/assertions/check-containment.mjs",
     "optimize:word-images": "node scripts/optimize-word-images.mjs",
     "verify:word-images": "node scripts/verify-word-images.mjs",
     "verify:images": "node scripts/verify-images.mjs && node scripts/verify-word-images.mjs",
-    "verify:content": "node -e \"console.log('Content verification is not configured yet.')\""
+    "verify:content": "node scripts/verify-content.mjs"
   },
   "dependencies": {
     "idb": "^8.0.3",

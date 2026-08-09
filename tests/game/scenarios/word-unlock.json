@@ -1,0 +1,30 @@
+{
+  "id": "word-unlock",
+  "description": "45文字では未解放、46文字ではことばの庭へ進める",
+  "steps": [
+    { "buttons": [], "frames": 2 }
+  ],
+  "sessions": [
+    {
+      "name": "45-kana",
+      "fixture": { "kind": "progress", "completedKanaCount": 45, "currentKana": "ん", "stage": "intro" },
+      "flow": [
+        { "action": "expectState", "screen": "garden", "wordsUnlocked": false },
+        { "action": "expectButton", "name": "つづきを あそぶ" },
+        { "action": "expectNoButton", "name": "ことばの にわへ" },
+        { "action": "capture", "name": "locked-at-45" }
+      ]
+    },
+    {
+      "name": "46-kana",
+      "fixture": { "kind": "progress", "completedKanaCount": 46, "currentKana": "ん", "stage": "reward" },
+      "flow": [
+        { "action": "expectState", "screen": "garden", "wordsUnlocked": true },
+        { "action": "expectButton", "name": "ことばの にわへ" },
+        { "action": "clickButton", "name": "ことばの にわへ" },
+        { "action": "expectState", "screen": "wordGarden", "wordsUnlocked": true },
+        { "action": "capture", "name": "unlocked-at-46" }
+      ]
+    }
+  ]
+}

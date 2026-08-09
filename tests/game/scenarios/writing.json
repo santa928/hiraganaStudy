@@ -1,0 +1,24 @@
+{
+  "id": "writing",
+  "description": "「あ」の太線・細線・見本・自由書きから報酬までを通す",
+  "fixture": { "kind": "progress", "completedKanaCount": 0, "currentKana": "あ", "stage": "traceWide" },
+  "steps": [
+    { "buttons": ["left_mouse_button"], "frames": 2, "mouse_x": 140, "mouse_y": 140 },
+    { "buttons": [], "frames": 4 }
+  ],
+  "flow": [
+    { "action": "openLesson" },
+    { "action": "expectState", "screen": "lesson", "stage": "traceWide", "kana": "あ" },
+    { "action": "capture", "name": "trace-wide" },
+    { "action": "drawAndContinue" },
+    { "action": "expectState", "screen": "lesson", "stage": "traceNarrow", "kana": "あ" },
+    { "action": "drawAndContinue" },
+    { "action": "expectState", "screen": "lesson", "stage": "copyWithModel", "kana": "あ" },
+    { "action": "drawAndContinue" },
+    { "action": "expectState", "screen": "lesson", "stage": "freeWrite", "kana": "あ" },
+    { "action": "capture", "name": "free-write" },
+    { "action": "drawAndContinue" },
+    { "action": "expectState", "screen": "lesson", "stage": "reward", "kana": "あ" },
+    { "action": "capture", "name": "reward" }
+  ]
+}

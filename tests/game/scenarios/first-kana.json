@@ -1,0 +1,23 @@
+{
+  "id": "first-kana",
+  "description": "音声確認から「あ」の形・音合わせまでを通す",
+  "fixture": { "kind": "fresh" },
+  "steps": [
+    { "buttons": [], "frames": 2 }
+  ],
+  "flow": [
+    { "action": "expectState", "screen": "soundGate", "stage": "intro", "kana": "あ" },
+    { "action": "clickButton", "name": "こえを きく" },
+    { "action": "clickButton", "name": "じょうろを さわる" },
+    { "action": "expectState", "screen": "lesson", "stage": "intro", "kana": "あ" },
+    { "action": "capture", "name": "intro" },
+    { "action": "clickButton", "name": "はじめる" },
+    { "action": "clickWrongKana", "correct": "あ" },
+    { "action": "expectState", "screen": "lesson", "stage": "shapeMatch", "guideCount": 1 },
+    { "action": "clickKana", "character": "あ" },
+    { "action": "expectState", "screen": "lesson", "stage": "soundMatch", "kana": "あ" },
+    { "action": "capture", "name": "sound-match" },
+    { "action": "clickKana", "character": "あ" },
+    { "action": "expectState", "screen": "lesson", "stage": "traceWide", "kana": "あ" }
+  ]
+}

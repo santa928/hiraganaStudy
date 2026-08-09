@@ -22,12 +22,13 @@ const VALID_MANIFEST = {
     { src: "icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
   ],
 };
+const VALID_HTML = '<link rel="icon" href="/hiraganaStudy/icons/icon-192.png"><link rel="manifest" href="/hiraganaStudy/manifest.webmanifest"><script src="/hiraganaStudy/assets/index-abc.js"></script>';
 
 describe("GitHub Pages build verifier", () => {
   it("subpath付きHTML・manifest・offline成果物を受け入れる", () => {
     const issues = findPagesBuildIssues({
       basePath: "/hiraganaStudy/",
-      html: '<link rel="manifest" href="/hiraganaStudy/manifest.webmanifest"><script src="/hiraganaStudy/assets/index-abc.js"></script>',
+      html: VALID_HTML,
       manifest: VALID_MANIFEST,
       artifactPaths: ["index.html", "manifest.webmanifest", "sw.js", "workbox-abc.js", "assets/index-abc.js", "assets/picture.webp", "assets/sound.wav", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"],
       serviceWorkerSource: 'precacheAndRoute([{url:"index.html",revision:"a"},{url:"assets/index-abc.js",revision:null},{url:"assets/picture.webp",revision:"b"},{url:"assets/sound.wav",revision:"c"},{url:"icons/icon-192.png",revision:"d"},{url:"icons/icon-512.png",revision:"e"},{url:"icons/icon-maskable-512.png",revision:"f"}])',
@@ -60,7 +61,7 @@ describe("GitHub Pages build verifier", () => {
   it("画面・画像・音声・iconの一部でもprecacheから欠ければ拒否する", () => {
     const issues = findPagesBuildIssues({
       basePath: "/hiraganaStudy/",
-      html: '<link rel="manifest" href="/hiraganaStudy/manifest.webmanifest"><script src="/hiraganaStudy/assets/index-abc.js"></script>',
+      html: VALID_HTML,
       manifest: VALID_MANIFEST,
       artifactPaths: ["index.html", "manifest.webmanifest", "sw.js", "workbox-abc.js", "assets/index-abc.js", "assets/picture.webp", "assets/sound.wav", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"],
       serviceWorkerSource: 'precacheAndRoute([{url:"index.html",revision:"a"},{url:"assets/index-abc.js",revision:null},{url:"assets/picture.webp",revision:"b"},{url:"icons/icon-192.png",revision:"d"},{url:"icons/icon-512.png",revision:"e"},{url:"icons/icon-maskable-512.png",revision:"f"}])',
@@ -72,7 +73,7 @@ describe("GitHub Pages build verifier", () => {
   it("固定名assetのnull revisionとprecache URL重複を拒否する", () => {
     const issues = findPagesBuildIssues({
       basePath: "/hiraganaStudy/",
-      html: '<link rel="manifest" href="/hiraganaStudy/manifest.webmanifest"><script src="/hiraganaStudy/assets/index-abc.js"></script>',
+      html: VALID_HTML,
       manifest: VALID_MANIFEST,
       artifactPaths: ["index.html", "manifest.webmanifest", "sw.js", "workbox-abc.js", "assets/index-abc.js", "assets/picture.webp", "assets/sound.wav", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"],
       serviceWorkerSource: 'precacheAndRoute([{url:"index.html",revision:"a"},{url:"assets/index-abc.js",revision:null},{url:"assets/picture.webp",revision:null},{url:"assets/sound.wav",revision:"c"},{url:"icons/icon-192.png",revision:"d"},{url:"icons/icon-192.png",revision:"d"},{url:"icons/icon-512.png",revision:"e"},{url:"icons/icon-maskable-512.png",revision:"f"}])',
@@ -87,5 +88,17 @@ describe("GitHub Pages build verifier", () => {
     const buildJob = workflow.match(/\n {2}build:\n([\s\S]*?)\n {2}deploy:/)?.[1] ?? "";
 
     expect(buildJob).toMatch(/permissions:\n\s+contents: read\n\s+pages: read/);
+  });
+
+  it("既定faviconの404を防ぐbase path付きicon linkを必須にする", () => {
+    const issues = findPagesBuildIssues({
+      basePath: "/hiraganaStudy/",
+      html: '<link rel="manifest" href="/hiraganaStudy/manifest.webmanifest"><script src="/hiraganaStudy/assets/index-abc.js"></script>',
+      manifest: VALID_MANIFEST,
+      artifactPaths: ["index.html", "manifest.webmanifest", "sw.js", "workbox-abc.js", "assets/index-abc.js", "assets/picture.webp", "assets/sound.wav", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"],
+      serviceWorkerSource: 'precacheAndRoute([{url:"index.html",revision:"a"},{url:"assets/index-abc.js",revision:null},{url:"assets/picture.webp",revision:"b"},{url:"assets/sound.wav",revision:"c"},{url:"icons/icon-192.png",revision:"d"},{url:"icons/icon-512.png",revision:"e"},{url:"icons/icon-maskable-512.png",revision:"f"}])',
+    });
+
+    expect(issues).toContain("favicon が /hiraganaStudy/icons/icon-192.png ではありません");
   });
 });
