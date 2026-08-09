@@ -1,7 +1,8 @@
 /* global Buffer, console, process */
 
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { access, copyFile, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
@@ -10,12 +11,13 @@ export const WEBP_QUALITY = 82;
 export const KANA_OUTPUT_SIZE = 512;
 export const CREAM_BACKGROUND = Object.freeze({ r: 253, g: 240, b: 207, alpha: 1 });
 
-const SOURCE_DIRECTORY = resolve("assets-source/illustration-sheets");
-const KANA_OUTPUT_DIRECTORY = resolve("public/assets/illustrations/kana");
-const WORLD_OUTPUT_DIRECTORY = resolve("public/assets/illustrations/world");
-const ASSET_CATALOG_PATH = resolve("src/features/learning/content/assetCatalog.ts");
-const CONTACT_SHEET_PATH = process.env.CONTACT_SHEET_PATH
-  ?? "/private/tmp/hiragana-kana-contact-sheet.png";
+export const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+const SOURCE_DIRECTORY_RELATIVE = "assets-source/illustration-sheets";
+const KANA_OUTPUT_DIRECTORY_RELATIVE = "public/assets/illustrations/kana";
+const WORLD_OUTPUT_DIRECTORY_RELATIVE = "public/assets/illustrations/world";
+const ASSET_CATALOG_PATH_RELATIVE = "src/features/learning/content/assetCatalog.ts";
+const DEFAULT_CONTACT_SHEET_PATH = "/private/tmp/hiragana-kana-contact-sheet.png";
 
 const CELL_WIDTH = 384;
 const CELL_HEIGHT = 512;
@@ -273,7 +275,7 @@ export function getWorldIllustration(key: string): IllustrationAsset {
 }
 
 /** 46画像をキーラベル付きの目視用contact sheetへまとめる。 */
-async function writeContactSheet(outputPath) {
+async function writeContactSheet(kanaOutputDirectory, outputPath) {
   const tileWidth = 280;
   const tileHeight = 240;
   const columns = 8;
@@ -283,7 +285,7 @@ async function writeContactSheet(outputPath) {
   for (const [index, asset] of KANA_ASSETS.entries()) {
     const left = (index % columns) * tileWidth;
     const top = Math.floor(index / columns) * tileHeight;
-    const thumbnail = await sharp(join(KANA_OUTPUT_DIRECTORY, asset.fileName))
+    const thumbnail = await sharp(join(kanaOutputDirectory, asset.fileName))
       .resize(216, 216, { fit: "contain", background: CREAM_BACKGROUND })
       .png()
       .toBuffer();
@@ -303,40 +305,291 @@ async function writeContactSheet(outputPath) {
   }).composite(composites).png().toFile(outputPath);
 }
 
-/** sourceから全完成画像、runtime catalog、contact sheetを再生成する。 */
-export async function optimizeImages() {
-  sharp.cache(false);
+/** 二つのsource矩形が正の面積で交差するかを返す。 */
+function rectanglesOverlap(first, second) {
+  return first.left < second.left + second.width
+    && first.left + first.width > second.left
+    && first.top < second.top + second.height
+    && first.top + first.height > second.top;
+}
+
+/** source全件とmanifest/crop境界を、出力へ触れる前に検証する。 */
+export async function validateSourceAssets() {
+  const sourceDirectory = join(REPOSITORY_ROOT, SOURCE_DIRECTORY_RELATIVE);
+  const failures = [];
+  const check = (condition, message) => {
+    if (!condition) failures.push(message);
+  };
+  const sourceDimensions = new Map();
+
+  check(KANA_ASSETS.length === 46, `kana manifestが46件ではない: ${KANA_ASSETS.length}`);
+  check(WORLD_ASSETS.length === 3, `world manifestが3件ではない: ${WORLD_ASSETS.length}`);
+  check(new Set(KANA_ASSETS.map(({ key }) => key)).size === 46, "kana keyが重複している");
+  check(new Set(WORLD_ASSETS.map(({ key }) => key)).size === 3, "world keyが重複している");
+
+  for (let sheetNumber = 1; sheetNumber <= 6; sheetNumber += 1) {
+    const fileName = `sheet-${String(sheetNumber).padStart(2, "0")}.png`;
+    try {
+      await access(join(sourceDirectory, fileName));
+      const metadata = await sharp(join(sourceDirectory, fileName), { failOn: "error" }).metadata();
+      sourceDimensions.set(fileName, metadata);
+      check(metadata.width === 1536 && metadata.height === 1024,
+        `${fileName}: source寸法が1536x1024ではない (${metadata.width}x${metadata.height})`);
+    } catch (error) {
+      failures.push(`${fileName}: sourceを読めない (${error.message})`);
+    }
+  }
+
+  try {
+    const stylePath = join(sourceDirectory, "style-reference.png");
+    await access(stylePath);
+    const metadata = await sharp(stylePath, { failOn: "error" }).metadata();
+    sourceDimensions.set("style-reference.png", metadata);
+    check(metadata.width === 1024 && metadata.height === 1536,
+      `style-reference.png: source寸法が1024x1536ではない (${metadata.width}x${metadata.height})`);
+  } catch (error) {
+    failures.push(`style-reference.png: sourceを読めない (${error.message})`);
+  }
+
+  for (const [index, asset] of KANA_ASSETS.entries()) {
+    const metadata = sourceDimensions.get(asset.sheet);
+    const expectedSheet = `sheet-${String(Math.floor(index / 8) + 1).padStart(2, "0")}.png`;
+    const indexInSheet = index % 8;
+    check(asset.sheet === expectedSheet, `${asset.key}: 固定sheet順が不正 (${asset.sheet})`);
+    check(asset.cell.column === indexInSheet % 4 && asset.cell.row === Math.floor(indexInSheet / 4),
+      `${asset.key}: 固定4x2 cell順が不正`);
+    check(Number.isInteger(asset.sourceRect.left) && Number.isInteger(asset.sourceRect.top)
+      && Number.isInteger(asset.sourceRect.width) && Number.isInteger(asset.sourceRect.height)
+      && asset.sourceRect.width > 0 && asset.sourceRect.height > 0,
+    `${asset.key}: sourceRectが正の整数ではない`);
+    if (metadata) {
+      check(asset.sourceRect.left >= 0 && asset.sourceRect.top >= 0
+        && asset.sourceRect.left + asset.sourceRect.width <= metadata.width
+        && asset.sourceRect.top + asset.sourceRect.height <= metadata.height,
+      `${asset.key}: sourceRectがsheet外`);
+    }
+    const cellCenter = {
+      x: asset.cell.column * CELL_WIDTH + CELL_WIDTH / 2,
+      y: asset.cell.row * CELL_HEIGHT + CELL_HEIGHT / 2,
+    };
+    check(cellCenter.x >= asset.sourceRect.left
+      && cellCenter.x < asset.sourceRect.left + asset.sourceRect.width
+      && cellCenter.y >= asset.sourceRect.top
+      && cellCenter.y < asset.sourceRect.top + asset.sourceRect.height,
+    `${asset.key}: sourceRectが名目cell中心を含まない`);
+  }
+
+  for (const [index, asset] of KANA_ASSETS.entries()) {
+    for (const other of KANA_ASSETS.slice(index + 1)) {
+      if (asset.sheet === other.sheet) {
+        check(!rectanglesOverlap(asset.sourceRect, other.sourceRect),
+          `${asset.key} と ${other.key}: sourceRectが重複`);
+      }
+    }
+  }
+
+  for (const asset of WORLD_ASSETS) {
+    const metadata = sourceDimensions.get(asset.source);
+    if (!asset.sourceRect || !metadata) continue;
+    check(asset.sourceRect.left >= 0 && asset.sourceRect.top >= 0
+      && asset.sourceRect.width > 0 && asset.sourceRect.height > 0
+      && asset.sourceRect.left + asset.sourceRect.width <= metadata.width
+      && asset.sourceRect.top + asset.sourceRect.height <= metadata.height,
+    `${asset.key}: world sourceRectがsource外`);
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Image source preflight failed (${failures.length}):\n${failures.map((failure) => `- ${failure}`).join("\n")}`);
+  }
+}
+
+/** 相対指定をcwdではなく指定baseから絶対pathへ正規化する。 */
+function normalizePath(path, baseDirectory) {
+  return isAbsolute(path) ? path : join(baseDirectory, path);
+}
+
+/** filesystem rootをmanaged rootとして受け取る事故を防ぐ。 */
+function assertSafeRoot(rootDirectory, label) {
+  if (dirname(rootDirectory) === rootDirectory) {
+    throw new Error(`${label} cannot be a filesystem root: ${rootDirectory}`);
+  }
+}
+
+/** 隔離rootへ49画像、catalog、contact sheetを生成する。 */
+async function generateImageArtifacts({ artifactRoot, contactSheetPath, failureAfterAssetKey }) {
+  const sourceDirectory = join(REPOSITORY_ROOT, SOURCE_DIRECTORY_RELATIVE);
+  const kanaOutputDirectory = join(artifactRoot, KANA_OUTPUT_DIRECTORY_RELATIVE);
+  const worldOutputDirectory = join(artifactRoot, WORLD_OUTPUT_DIRECTORY_RELATIVE);
+  const assetCatalogPath = join(artifactRoot, ASSET_CATALOG_PATH_RELATIVE);
   await Promise.all([
-    mkdir(KANA_OUTPUT_DIRECTORY, { recursive: true }),
-    mkdir(WORLD_OUTPUT_DIRECTORY, { recursive: true }),
+    rm(kanaOutputDirectory, { recursive: true, force: true }),
+    rm(worldOutputDirectory, { recursive: true, force: true }),
+    rm(assetCatalogPath, { force: true }),
   ]);
+  await Promise.all([
+    mkdir(kanaOutputDirectory, { recursive: true }),
+    mkdir(worldOutputDirectory, { recursive: true }),
+    mkdir(dirname(assetCatalogPath), { recursive: true }),
+  ]);
+
+  const maybeInjectFailure = (key) => {
+    if (failureAfterAssetKey === key) {
+      throw new Error(`Injected image generation failure after ${key}`);
+    }
+  };
 
   for (const asset of KANA_ASSETS) {
     await writeContainedWebp(
-      join(SOURCE_DIRECTORY, asset.sheet),
-      join(KANA_OUTPUT_DIRECTORY, asset.fileName),
+      join(sourceDirectory, asset.sheet),
+      join(kanaOutputDirectory, asset.fileName),
       asset.sourceRect,
       asset.width,
       asset.height,
     );
+    maybeInjectFailure(asset.key);
   }
 
   for (const asset of WORLD_ASSETS) {
     await writeContainedWebp(
-      join(SOURCE_DIRECTORY, asset.source),
-      join(WORLD_OUTPUT_DIRECTORY, asset.fileName),
+      join(sourceDirectory, asset.source),
+      join(worldOutputDirectory, asset.fileName),
       asset.sourceRect,
       asset.width,
       asset.height,
     );
+    maybeInjectFailure(asset.key);
   }
 
-  await writeFile(ASSET_CATALOG_PATH, renderAssetCatalogSource(), "utf8");
-  await writeContactSheet(CONTACT_SHEET_PATH);
+  await writeFile(assetCatalogPath, renderAssetCatalogSource(), "utf8");
+  await writeContactSheet(kanaOutputDirectory, contactSheetPath);
+  return { kanaOutputDirectory, worldOutputDirectory, assetCatalogPath, contactSheetPath };
+}
+
+/** 出力先注入用の公開API。実publicへ触れず隔離成果物を生成する。 */
+export async function buildImageArtifacts({
+  artifactRoot,
+  contactSheetPath = "hiragana-kana-contact-sheet.png",
+  failureAfterAssetKey,
+} = {}) {
+  if (!artifactRoot) throw new Error("artifactRoot is required");
+  const normalizedArtifactRoot = normalizePath(artifactRoot, REPOSITORY_ROOT);
+  const normalizedContactPath = normalizePath(contactSheetPath, normalizedArtifactRoot);
+  assertSafeRoot(normalizedArtifactRoot, "artifactRoot");
+  sharp.cache(false);
+  await validateSourceAssets();
+  return generateImageArtifacts({
+    artifactRoot: normalizedArtifactRoot,
+    contactSheetPath: normalizedContactPath,
+    failureAfterAssetKey,
+  });
+}
+
+/** pathが存在するかを、存在しない場合だけfalseとして返す。 */
+async function pathExists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** contact sheetを同一directory内の一時fileからatomic replaceする。 */
+async function publishContactSheet(stagedPath, targetPath) {
+  const targetDirectory = dirname(targetPath);
+  await mkdir(targetDirectory, { recursive: true });
+  const temporaryDirectory = await mkdtemp(join(targetDirectory, ".hiragana-contact-"));
+  const temporaryPath = join(temporaryDirectory, "contact.png");
+  try {
+    await copyFile(stagedPath, temporaryPath);
+    await rename(temporaryPath, targetPath);
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+/** 生成済みmanaged成果物だけをbackup付きrename transactionで置換する。 */
+async function publishManagedArtifacts(stagedArtifacts, destinationRoot) {
+  const records = [
+    {
+      staged: stagedArtifacts.kanaOutputDirectory,
+      target: join(destinationRoot, KANA_OUTPUT_DIRECTORY_RELATIVE),
+    },
+    {
+      staged: stagedArtifacts.worldOutputDirectory,
+      target: join(destinationRoot, WORLD_OUTPUT_DIRECTORY_RELATIVE),
+    },
+    {
+      staged: stagedArtifacts.assetCatalogPath,
+      target: join(destinationRoot, ASSET_CATALOG_PATH_RELATIVE),
+    },
+  ].map((record) => ({
+    ...record,
+    backup: join(dirname(record.target), `.${basename(record.target)}.backup-${randomUUID()}`),
+    hadTarget: false,
+  }));
+  const installed = [];
+
+  try {
+    for (const record of records) {
+      await mkdir(dirname(record.target), { recursive: true });
+      record.hadTarget = await pathExists(record.target);
+      if (record.hadTarget) await rename(record.target, record.backup);
+      try {
+        await rename(record.staged, record.target);
+      } catch (error) {
+        if (record.hadTarget) await rename(record.backup, record.target);
+        throw error;
+      }
+      installed.push(record);
+    }
+  } catch (error) {
+    for (const record of installed.reverse()) {
+      if (await pathExists(record.target)) await rename(record.target, record.staged);
+      if (record.hadTarget && await pathExists(record.backup)) {
+        await rename(record.backup, record.target);
+      }
+    }
+    throw error;
+  }
+
+  await Promise.all(records.map((record) => rm(record.backup, { recursive: true, force: true })));
+}
+
+/** preflight後に全成果物を隔離生成し、成功時だけmanaged出力を反映する。 */
+export async function optimizeImages({
+  destinationRoot = REPOSITORY_ROOT,
+  contactSheetPath = process.env.CONTACT_SHEET_PATH ?? DEFAULT_CONTACT_SHEET_PATH,
+  failureAfterAssetKey,
+} = {}) {
+  sharp.cache(false);
+  const normalizedDestinationRoot = normalizePath(destinationRoot, REPOSITORY_ROOT);
+  const normalizedContactPath = normalizePath(contactSheetPath, REPOSITORY_ROOT);
+  assertSafeRoot(normalizedDestinationRoot, "destinationRoot");
+  await validateSourceAssets();
+  await mkdir(normalizedDestinationRoot, { recursive: true });
+  const stagingRoot = await mkdtemp(join(normalizedDestinationRoot, ".hiragana-image-build-"));
+
+  try {
+    const stagedContactPath = join(stagingRoot, "hiragana-kana-contact-sheet.png");
+    const stagedArtifacts = await generateImageArtifacts({
+      artifactRoot: stagingRoot,
+      contactSheetPath: stagedContactPath,
+      failureAfterAssetKey,
+    });
+    await publishContactSheet(stagedContactPath, normalizedContactPath);
+    await publishManagedArtifacts(stagedArtifacts, normalizedDestinationRoot);
+  } finally {
+    await rm(stagingRoot, { recursive: true, force: true });
+  }
+
   console.log(`Generated ${KANA_ASSETS.length} kana images and ${WORLD_ASSETS.length} world images.`);
-  console.log(`Contact sheet: ${CONTACT_SHEET_PATH}`);
+  console.log(`Contact sheet: ${normalizedContactPath}`);
 }
 
 const isMain = process.argv[1]
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) await optimizeImages();
+if (isMain) await optimizeImages({
+  failureAfterAssetKey: process.env.IMAGE_GENERATION_FAIL_AFTER,
+});

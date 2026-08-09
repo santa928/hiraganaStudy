@@ -1,21 +1,28 @@
 /* global console, process */
 
-import { readdir, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
 
 import {
+  buildImageArtifacts,
   CREAM_BACKGROUND,
   KANA_ASSETS,
   KANA_OUTPUT_SIZE,
+  REPOSITORY_ROOT,
+  validateSourceAssets,
   WEBP_QUALITY,
   WORLD_ASSETS,
 } from "./optimize-images.mjs";
 
-const SOURCE_DIRECTORY = resolve("assets-source/illustration-sheets");
-const KANA_OUTPUT_DIRECTORY = resolve("public/assets/illustrations/kana");
-const WORLD_OUTPUT_DIRECTORY = resolve("public/assets/illustrations/world");
+const SOURCE_DIRECTORY_RELATIVE = "assets-source/illustration-sheets";
+const KANA_OUTPUT_DIRECTORY_RELATIVE = "public/assets/illustrations/kana";
+const WORLD_OUTPUT_DIRECTORY_RELATIVE = "public/assets/illustrations/world";
+const ASSET_CATALOG_PATH_RELATIVE = "src/features/learning/content/assetCatalog.ts";
 const KANA_SIZE_CAP_BYTES = 160_000;
 const WORLD_SIZE_CAP_BYTES = 500_000;
 const REQUIRED_NAVY_MARGIN = 8;
@@ -27,29 +34,14 @@ const WHITE_PROTECTION_SAMPLES = Object.freeze([
   { key: "kana-yu-snowman", sourcePoint: { x: 220, y: 680 } },
 ]);
 
-const failures = [];
-
-/** 条件違反を蓄積し、可能な限り全対象を一度に報告する。 */
-function check(condition, message) {
-  if (!condition) failures.push(message);
-}
-
 /** 濃藍輪郭として扱うpixelかを判定する。 */
 function isNavyPixel(red, green, blue) {
   return red < 80 && green < 125 && blue < 165 && green > red && blue > red;
 }
 
-/** 二つのsource矩形が正の面積で交差するかを返す。 */
-function rectanglesOverlap(first, second) {
-  return first.left < second.left + second.width
-    && first.left + first.width > second.left
-    && first.top < second.top + second.height
-    && first.top + first.height > second.top;
-}
-
 /** sourceRectの外周へ濃藍輪郭が接触していないことを検査する。 */
-async function verifySourceRectMargin(asset) {
-  const { data, info } = await sharp(join(SOURCE_DIRECTORY, asset.sheet))
+async function verifySourceRectMargin(asset, sourceDirectory, check) {
+  const { data, info } = await sharp(join(sourceDirectory, asset.sheet))
     .extract(asset.sourceRect)
     .removeAlpha()
     .raw()
@@ -70,7 +62,7 @@ async function verifySourceRectMargin(asset) {
 }
 
 /** 出力内の濃藍輪郭bboxが4辺から最低8px離れていることを検査する。 */
-async function verifyOutputNavyMargin(path, key) {
+async function verifyOutputNavyMargin(path, key, check) {
   const { data, info } = await sharp(path).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   let minX = info.width;
   let minY = info.height;
@@ -100,7 +92,7 @@ async function verifyOutputNavyMargin(path, key) {
 }
 
 /** contain paddingの4隅がstyle-reference由来の暖色クリームであることを検査する。 */
-async function verifyCreamCorners(path, key) {
+async function verifyCreamCorners(path, key, check) {
   const { data, info } = await sharp(path).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const corners = [
     [0, 0],
@@ -134,20 +126,18 @@ function mapSourcePointToOutput(sourceRect, sourcePoint) {
 }
 
 /** 白い題材の内部pixelが背景化されずsourceから保持されていることを検査する。 */
-async function verifyWhiteProtection(sample) {
+async function verifyWhiteProtection(sample, sourceDirectory, kanaOutputDirectory, check) {
   const asset = KANA_ASSETS.find(({ key }) => key === sample.key);
   check(Boolean(asset), `${sample.key}: 白保護sampleに対応するmanifestがない`);
   if (!asset) return;
 
-  const sourcePath = join(SOURCE_DIRECTORY, asset.sheet);
-  const outputPath = join(KANA_OUTPUT_DIRECTORY, asset.fileName);
-  const sourcePixel = await sharp(sourcePath)
+  const sourcePixel = await sharp(join(sourceDirectory, asset.sheet))
     .extract({ left: sample.sourcePoint.x, top: sample.sourcePoint.y, width: 1, height: 1 })
     .removeAlpha()
     .raw()
     .toBuffer();
   const outputPoint = mapSourcePointToOutput(asset.sourceRect, sample.sourcePoint);
-  const outputPixel = await sharp(outputPath)
+  const outputPixel = await sharp(join(kanaOutputDirectory, asset.fileName))
     .extract({ left: outputPoint.x, top: outputPoint.y, width: 1, height: 1 })
     .removeAlpha()
     .raw()
@@ -161,66 +151,19 @@ async function verifyWhiteProtection(sample) {
     `${sample.key}: 白い題材sampleのsource差が大きい (${channelDifference.toFixed(1)})`);
 }
 
-/** source sheet寸法、順序、固定cell、sourceRectの安全性を検査する。 */
-async function verifySourcesAndManifest() {
-  check(WEBP_QUALITY === 82, `WebP qualityが82ではない: ${WEBP_QUALITY}`);
-  check(KANA_ASSETS.length === 46, `kana manifestが46件ではない: ${KANA_ASSETS.length}`);
-  check(new Set(KANA_ASSETS.map(({ key }) => key)).size === 46, "kana manifestのkeyが重複");
-  check(WORLD_ASSETS.length >= 3, `world manifestが3件未満: ${WORLD_ASSETS.length}`);
-
-  for (let sheetNumber = 1; sheetNumber <= 6; sheetNumber += 1) {
-    const sheet = `sheet-${String(sheetNumber).padStart(2, "0")}.png`;
-    const metadata = await sharp(join(SOURCE_DIRECTORY, sheet)).metadata();
-    check(metadata.width === 1536 && metadata.height === 1024,
-      `${sheet}: source寸法が1536x1024ではない (${metadata.width}x${metadata.height})`);
-  }
-  const styleMetadata = await sharp(join(SOURCE_DIRECTORY, "style-reference.png")).metadata();
-  check(styleMetadata.width === 1024 && styleMetadata.height === 1536,
-    `style-reference.png: source寸法が1024x1536ではない (${styleMetadata.width}x${styleMetadata.height})`);
-
-  for (const [index, asset] of KANA_ASSETS.entries()) {
-    const expectedSheet = `sheet-${String(Math.floor(index / 8) + 1).padStart(2, "0")}.png`;
-    const indexInSheet = index % 8;
-    check(asset.sheet === expectedSheet, `${asset.key}: 固定sheet順が不正 (${asset.sheet})`);
-    check(asset.cell.column === indexInSheet % 4 && asset.cell.row === Math.floor(indexInSheet / 4),
-      `${asset.key}: 固定4x2 cell順が不正`);
-    check(asset.sourceRect.left >= 0 && asset.sourceRect.top >= 0
-      && asset.sourceRect.left + asset.sourceRect.width <= 1536
-      && asset.sourceRect.top + asset.sourceRect.height <= 1024,
-    `${asset.key}: sourceRectがsheet外`);
-    const cellCenter = {
-      x: asset.cell.column * 384 + 192,
-      y: asset.cell.row * 512 + 256,
-    };
-    check(cellCenter.x >= asset.sourceRect.left
-      && cellCenter.x < asset.sourceRect.left + asset.sourceRect.width
-      && cellCenter.y >= asset.sourceRect.top
-      && cellCenter.y < asset.sourceRect.top + asset.sourceRect.height,
-    `${asset.key}: sourceRectが名目cell中心を含まない`);
-    await verifySourceRectMargin(asset);
-  }
-
-  for (const [index, asset] of KANA_ASSETS.entries()) {
-    for (const other of KANA_ASSETS.slice(index + 1)) {
-      if (asset.sheet === other.sheet) {
-        check(!rectanglesOverlap(asset.sourceRect, other.sourceRect),
-          `${asset.key} と ${other.key}: sourceRectが重複`);
-      }
-    }
-  }
-}
-
 /** 完成WebPのfile集合、metadata、容量、輪郭余白を検査する。 */
-async function verifyOutputs() {
-  const kanaFiles = (await readdir(KANA_OUTPUT_DIRECTORY)).filter((file) => file.endsWith(".webp")).sort();
-  const worldFiles = (await readdir(WORLD_OUTPUT_DIRECTORY)).filter((file) => file.endsWith(".webp")).sort();
+async function verifyOutputs(repositoryRoot, check) {
+  const kanaOutputDirectory = join(repositoryRoot, KANA_OUTPUT_DIRECTORY_RELATIVE);
+  const worldOutputDirectory = join(repositoryRoot, WORLD_OUTPUT_DIRECTORY_RELATIVE);
+  const kanaFiles = (await readdir(kanaOutputDirectory)).filter((file) => file.endsWith(".webp")).sort();
+  const worldFiles = (await readdir(worldOutputDirectory)).filter((file) => file.endsWith(".webp")).sort();
   check(JSON.stringify(kanaFiles) === JSON.stringify(KANA_ASSETS.map(({ fileName }) => fileName).sort()),
     `kana WebP集合がmanifestと不一致 (${kanaFiles.length}件)`);
   check(JSON.stringify(worldFiles) === JSON.stringify(WORLD_ASSETS.map(({ fileName }) => fileName).sort()),
     `world WebP集合がmanifestと不一致 (${worldFiles.length}件)`);
 
   for (const asset of KANA_ASSETS) {
-    const path = join(KANA_OUTPUT_DIRECTORY, asset.fileName);
+    const path = join(kanaOutputDirectory, asset.fileName);
     const [metadata, fileStat] = await Promise.all([sharp(path).metadata(), stat(path)]);
     check(metadata.format === "webp", `${asset.key}: formatがWebPではない (${metadata.format})`);
     check(metadata.width === 512 && metadata.height === 512,
@@ -228,12 +171,12 @@ async function verifyOutputs() {
     check(metadata.hasAlpha !== true, `${asset.key}: 透明channelを持つ`);
     check(fileStat.size <= KANA_SIZE_CAP_BYTES,
       `${asset.key}: ${fileStat.size} bytesで上限${KANA_SIZE_CAP_BYTES}超過`);
-    await verifyOutputNavyMargin(path, asset.key);
-    await verifyCreamCorners(path, asset.key);
+    await verifyOutputNavyMargin(path, asset.key, check);
+    await verifyCreamCorners(path, asset.key, check);
   }
 
   for (const asset of WORLD_ASSETS) {
-    const path = join(WORLD_OUTPUT_DIRECTORY, asset.fileName);
+    const path = join(worldOutputDirectory, asset.fileName);
     const [metadata, fileStat] = await Promise.all([sharp(path).metadata(), stat(path)]);
     check(metadata.format === "webp", `${asset.key}: formatがWebPではない (${metadata.format})`);
     check(metadata.width === asset.width && metadata.height === asset.height,
@@ -243,24 +186,85 @@ async function verifyOutputs() {
       `${asset.key}: ${fileStat.size} bytesで上限${WORLD_SIZE_CAP_BYTES}超過`);
   }
 
-  for (const sample of WHITE_PROTECTION_SAMPLES) await verifyWhiteProtection(sample);
+  const sourceDirectory = join(repositoryRoot, SOURCE_DIRECTORY_RELATIVE);
+  for (const sample of WHITE_PROTECTION_SAMPLES) {
+    await verifyWhiteProtection(sample, sourceDirectory, kanaOutputDirectory, check);
+  }
 }
 
-/** 全画像の再現可能な物理契約を検査し、違反時は対象を列挙してexit 1にする。 */
-export async function verifyImages() {
-  sharp.cache(false);
-  await verifySourcesAndManifest();
-  await verifyOutputs();
+/** fileのSHA-256を返す。 */
+async function sha256(path) {
+  return createHash("sha256").update(await readFile(path)).digest("hex");
+}
 
-  if (failures.length > 0) {
-    console.error(`Image verification failed (${failures.length}):`);
-    for (const failure of failures) console.error(`- ${failure}`);
-    process.exitCode = 1;
-    return;
+/** actual成果物と隔離再生成50成果物がbyte単位で一致することを検証する。 */
+async function verifyDeterministicRegeneration(repositoryRoot, check) {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "hiragana-image-verification-"));
+  const relativePaths = [
+    ...KANA_ASSETS.map(({ fileName }) => join(KANA_OUTPUT_DIRECTORY_RELATIVE, fileName)),
+    ...WORLD_ASSETS.map(({ fileName }) => join(WORLD_OUTPUT_DIRECTORY_RELATIVE, fileName)),
+    ASSET_CATALOG_PATH_RELATIVE,
+  ].sort();
+  check(relativePaths.length === 50, `決定性比較対象が50件ではない: ${relativePaths.length}`);
+
+  try {
+    await buildImageArtifacts({
+      artifactRoot: temporaryDirectory,
+      contactSheetPath: join(temporaryDirectory, "contact.png"),
+    });
+    for (const relativePath of relativePaths) {
+      const [actualHash, regeneratedHash] = await Promise.all([
+        sha256(join(repositoryRoot, relativePath)),
+        sha256(join(temporaryDirectory, relativePath)),
+      ]);
+      check(actualHash === regeneratedHash,
+        `${relativePath}: 隔離再生成SHA-256が既存成果物と不一致`);
+    }
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+/** 指定repo rootの物理契約と任意の隔離再生成決定性を検査し、再入可能な結果を返す。 */
+export async function verifyImages({
+  repositoryRoot = REPOSITORY_ROOT,
+  checkDeterminism = true,
+  log = true,
+} = {}) {
+  sharp.cache(false);
+  const failures = [];
+  const check = (condition, message) => {
+    if (!condition) failures.push(message);
+  };
+
+  try {
+    await validateSourceAssets();
+    check(WEBP_QUALITY === 82, `WebP qualityが82ではない: ${WEBP_QUALITY}`);
+    const sourceDirectory = join(REPOSITORY_ROOT, SOURCE_DIRECTORY_RELATIVE);
+    for (const asset of KANA_ASSETS) await verifySourceRectMargin(asset, sourceDirectory, check);
+    await verifyOutputs(repositoryRoot, check);
+    if (checkDeterminism) await verifyDeterministicRegeneration(repositoryRoot, check);
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
   }
 
-  console.log(`Verified ${KANA_ASSETS.length} kana WebP and ${WORLD_ASSETS.length} world WebP assets.`);
-  console.log(`Kana cap: ${KANA_SIZE_CAP_BYTES} bytes; world cap: ${WORLD_SIZE_CAP_BYTES} bytes; navy margin: ${REQUIRED_NAVY_MARGIN}px.`);
+  const result = { ok: failures.length === 0, failures: [...failures] };
+  if (log) {
+    if (!result.ok) {
+      console.error(`Image verification failed (${failures.length}):`);
+      for (const failure of failures) console.error(`- ${failure}`);
+    } else {
+      console.log(`Verified ${KANA_ASSETS.length} kana WebP and ${WORLD_ASSETS.length} world WebP assets.`);
+      console.log(`Kana cap: ${KANA_SIZE_CAP_BYTES} bytes; world cap: ${WORLD_SIZE_CAP_BYTES} bytes; navy margin: ${REQUIRED_NAVY_MARGIN}px.`);
+      if (checkDeterminism) console.log("Determinism: 50/50 SHA-256 matches from isolated regeneration.");
+    }
+  }
+  return result;
 }
 
-await verifyImages();
+const isMain = process.argv[1]
+  && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  const result = await verifyImages();
+  if (!result.ok) process.exitCode = 1;
+}
