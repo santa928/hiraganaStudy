@@ -1,3 +1,8 @@
+/* global process */
+
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { findPagesBuildIssues } from "./verify-pages-build.mjs";
@@ -24,8 +29,8 @@ describe("GitHub Pages build verifier", () => {
       basePath: "/hiraganaStudy/",
       html: '<link rel="manifest" href="/hiraganaStudy/manifest.webmanifest"><script src="/hiraganaStudy/assets/index-abc.js"></script>',
       manifest: VALID_MANIFEST,
-      artifactPaths: ["index.html", "manifest.webmanifest", "sw.js", "workbox-abc.js", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"],
-      serviceWorkerSource: 'precacheAndRoute([{url:"index.html"},{url:"assets/index-abc.js"},{url:"assets/picture.webp"},{url:"assets/sound.wav"},{url:"icons/icon-192.png"},{url:"icons/icon-512.png"},{url:"icons/icon-maskable-512.png"}])',
+      artifactPaths: ["index.html", "manifest.webmanifest", "sw.js", "workbox-abc.js", "assets/index-abc.js", "assets/picture.webp", "assets/sound.wav", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"],
+      serviceWorkerSource: 'precacheAndRoute([{url:"index.html",revision:"a"},{url:"assets/index-abc.js",revision:null},{url:"assets/picture.webp",revision:"b"},{url:"assets/sound.wav",revision:"c"},{url:"icons/icon-192.png",revision:"d"},{url:"icons/icon-512.png",revision:"e"},{url:"icons/icon-maskable-512.png",revision:"f"}])',
     });
 
     expect(issues).toEqual([]);
@@ -58,9 +63,29 @@ describe("GitHub Pages build verifier", () => {
       html: '<link rel="manifest" href="/hiraganaStudy/manifest.webmanifest"><script src="/hiraganaStudy/assets/index-abc.js"></script>',
       manifest: VALID_MANIFEST,
       artifactPaths: ["index.html", "manifest.webmanifest", "sw.js", "workbox-abc.js", "assets/index-abc.js", "assets/picture.webp", "assets/sound.wav", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"],
-      serviceWorkerSource: 'precacheAndRoute([{url:"index.html"},{url:"assets/index-abc.js"},{url:"assets/picture.webp"},{url:"icons/icon-192.png"},{url:"icons/icon-512.png"},{url:"icons/icon-maskable-512.png"}])',
+      serviceWorkerSource: 'precacheAndRoute([{url:"index.html",revision:"a"},{url:"assets/index-abc.js",revision:null},{url:"assets/picture.webp",revision:"b"},{url:"icons/icon-192.png",revision:"d"},{url:"icons/icon-512.png",revision:"e"},{url:"icons/icon-maskable-512.png",revision:"f"}])',
     });
 
     expect(issues).toContain("service worker cache欠落: assets/sound.wav");
+  });
+
+  it("固定名assetのnull revisionとprecache URL重複を拒否する", () => {
+    const issues = findPagesBuildIssues({
+      basePath: "/hiraganaStudy/",
+      html: '<link rel="manifest" href="/hiraganaStudy/manifest.webmanifest"><script src="/hiraganaStudy/assets/index-abc.js"></script>',
+      manifest: VALID_MANIFEST,
+      artifactPaths: ["index.html", "manifest.webmanifest", "sw.js", "workbox-abc.js", "assets/index-abc.js", "assets/picture.webp", "assets/sound.wav", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"],
+      serviceWorkerSource: 'precacheAndRoute([{url:"index.html",revision:"a"},{url:"assets/index-abc.js",revision:null},{url:"assets/picture.webp",revision:null},{url:"assets/sound.wav",revision:"c"},{url:"icons/icon-192.png",revision:"d"},{url:"icons/icon-192.png",revision:"d"},{url:"icons/icon-512.png",revision:"e"},{url:"icons/icon-maskable-512.png",revision:"f"}])',
+    });
+
+    expect(issues).toContain("固定asset revision欠落: assets/picture.webp");
+    expect(issues).toContain("precache URL重複: icons/icon-192.png");
+  });
+
+  it("Pages metadataを読むbuild jobへ最小権限を付ける", async () => {
+    const workflow = await readFile(join(process.cwd(), ".github/workflows/deploy-pages.yml"), "utf8");
+    const buildJob = workflow.match(/\n {2}build:\n([\s\S]*?)\n {2}deploy:/)?.[1] ?? "";
+
+    expect(buildJob).toMatch(/permissions:\n\s+contents: read\n\s+pages: read/);
   });
 });

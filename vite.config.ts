@@ -13,7 +13,8 @@ export default defineConfig({
     react(),
     VitePWA({
       injectRegister: null,
-      registerType: "autoUpdate",
+      registerType: "prompt",
+      includeManifestIcons: false,
       manifestFilename: "manifest.webmanifest",
       manifest: {
         id: basePath,
@@ -36,8 +37,9 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
+        clientsClaim: false,
+        skipWaiting: false,
+        dontCacheBustURLsMatching: /assets\/.*-[A-Za-z0-9_-]{8,}\.(?:js|css)$/,
         globPatterns: ["**/*.{js,css,html,webp,wav,png,json}"],
         maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
         navigateFallback: "index.html",

@@ -62,6 +62,22 @@ export function findPagesBuildIssues({ basePath, html, manifest, artifactPaths, 
   for (const path of cacheableArtifacts) {
     if (!serviceWorkerSource.includes(path)) issues.push(`service worker cache欠落: ${path}`);
   }
+  const precacheEntries = [...serviceWorkerSource.matchAll(/\{url:"([^"]+)",revision:(null|"[^"]*")\}/g)]
+    .map((match) => ({ url: match[1], revision: match[2] === "null" ? null : match[2].slice(1, -1) }));
+  const entriesByUrl = new Map();
+  for (const entry of precacheEntries) {
+    const existing = entriesByUrl.get(entry.url) ?? [];
+    existing.push(entry.revision);
+    entriesByUrl.set(entry.url, existing);
+  }
+  for (const [url, revisions] of entriesByUrl) {
+    if (revisions.length > 1) issues.push(`precache URL重複: ${url}`);
+  }
+  const fixedAssets = artifactPaths.filter((path) => /\.(?:webp|wav|png)$/.test(path));
+  for (const path of fixedAssets) {
+    const revisions = entriesByUrl.get(path) ?? [];
+    if (revisions.some((revision) => revision === null)) issues.push(`固定asset revision欠落: ${path}`);
+  }
   return issues;
 }
 
@@ -86,6 +102,10 @@ export async function verifyPagesBuild({
       artifactPaths,
       serviceWorkerSource,
     }));
+    const webpCount = artifactPaths.filter((path) => path.endsWith(".webp")).length;
+    const wavCount = artifactPaths.filter((path) => path.endsWith(".wav")).length;
+    if (webpCount !== 94) issues.push(`WebP成果物数が94ではありません: ${webpCount}`);
+    if (wavCount !== 4) issues.push(`WAV成果物数が4ではありません: ${wavCount}`);
     for (const [relativePath, expectedSize] of EXPECTED_ICONS) {
       const metadata = await sharp(join(distDirectory, relativePath)).metadata();
       if (metadata.format !== "png" || metadata.width !== expectedSize || metadata.height !== expectedSize) {

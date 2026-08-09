@@ -14,13 +14,10 @@ if (rootElement === null) {
 }
 
 if ("serviceWorker" in navigator) {
-  const updateServiceWorker = registerSW({
+  registerSW({
     immediate: true,
     onOfflineReady: () => browserPwaStatusStore.setStatus("offline-ready"),
-    onNeedRefresh: () => {
-      browserPwaStatusStore.setStatus("update-available");
-      void updateServiceWorker(true).catch(() => browserPwaStatusStore.setStatus("online-only"));
-    },
+    onNeedRefresh: () => browserPwaStatusStore.setStatus("update-available"),
     onRegisterError: () => browserPwaStatusStore.setStatus("online-only"),
   });
   void navigator.serviceWorker.ready.then(() => {

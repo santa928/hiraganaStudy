@@ -26,7 +26,7 @@ describe("PwaStatusStore", () => {
     expect(pwaStatusLabel("unsupported")).toBe("このブラウザでは使えません");
     expect(pwaStatusLabel("checking")).toBe("オフラインの準備中です");
     expect(pwaStatusLabel("offline-ready")).toBe("オフラインで使えます");
-    expect(pwaStatusLabel("update-available")).toBe("新しい版へ更新中です");
+    expect(pwaStatusLabel("update-available")).toBe("新しい版は次回起動で使えます");
     expect(pwaStatusLabel("online-only")).toBe("オンラインで使えます");
   });
 });

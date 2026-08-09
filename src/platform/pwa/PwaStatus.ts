@@ -39,7 +39,7 @@ export function pwaStatusLabel(status: PwaStatus): string {
   if (status === "unsupported") return "このブラウザでは使えません";
   if (status === "checking") return "オフラインの準備中です";
   if (status === "offline-ready") return "オフラインで使えます";
-  if (status === "update-available") return "新しい版へ更新中です";
+  if (status === "update-available") return "新しい版は次回起動で使えます";
   return "オンラインで使えます";
 }
 
