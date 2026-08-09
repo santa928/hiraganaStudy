@@ -81,7 +81,8 @@ function toCandidate(value: unknown): ProgressCandidate | null {
     isRecord(value)
     && typeof value.revision === "number"
     && Number.isSafeInteger(value.revision)
-    && value.revision > 0
+    && value.revision >= 0
+    && value.revision < Number.MAX_SAFE_INTEGER
     && Object.hasOwn(value, "progress")
   ) {
     return {

@@ -109,6 +109,52 @@ describe("IndexedDbProgressRepository", () => {
     expect(repository.storageDegraded).toBe(true);
   });
 
+  it("上限revisionのprimaryを破損候補として置換し、安全な世代で再読込する", async () => {
+    const databaseName = testDatabaseName();
+    const storage = new MapStorage();
+    await writePrimaryRecord(databaseName, envelope(
+      Number.MAX_SAFE_INTEGER,
+      100,
+      "invalid-limit",
+      resumableProgressAt("く", "traceNarrow"),
+    ));
+    const repository = new IndexedDbProgressRepository(databaseName, { localStorage: storage });
+
+    await repository.save(resumableProgressAt("さ", "soundMatch"));
+
+    expect(await readPrimaryRecord(databaseName)).toMatchObject({
+      revision: 1,
+      progress: { currentKanaIndex: KANA_ORDER.indexOf("さ"), stage: "soundMatch" },
+    });
+    await expect(new IndexedDbProgressRepository(databaseName, { localStorage: storage }).load()).resolves.toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("さ"),
+      stage: "soundMatch",
+    });
+  });
+
+  it("上限revisionのfallbackを破損候補として置換し、安全な世代で再読込する", async () => {
+    const databaseName = testDatabaseName();
+    const storage = new MapStorage();
+    storage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(envelope(
+      Number.MAX_SAFE_INTEGER,
+      100,
+      "invalid-limit",
+      resumableProgressAt("く", "traceNarrow"),
+    )));
+    const repository = new IndexedDbProgressRepository(databaseName, { indexedDb: null, localStorage: storage });
+
+    await repository.save(resumableProgressAt("さ", "soundMatch"));
+
+    expect(JSON.parse(storage.getItem(FALLBACK_PROGRESS_STORAGE_KEY) ?? "null")).toMatchObject({
+      revision: 1,
+      progress: { currentKanaIndex: KANA_ORDER.indexOf("さ"), stage: "soundMatch" },
+    });
+    await expect(new IndexedDbProgressRepository(databaseName, { indexedDb: null, localStorage: storage }).load()).resolves.toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("さ"),
+      stage: "soundMatch",
+    });
+  });
+
   it("同revisionではwrittenAtが新しいfallbackを採用して保存劣化を通知する", async () => {
     const databaseName = testDatabaseName();
     const storage = new MapStorage();
@@ -392,6 +438,22 @@ function writePrimaryRecord(databaseName: string, value: unknown): Promise<void>
         resolve();
       });
       transaction.addEventListener("error", () => reject(transaction.error));
+    });
+  });
+}
+
+/** primaryの保存値をpublic loadとは独立して検査する。 */
+function readPrimaryRecord(databaseName: string): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(databaseName, 1);
+    open.addEventListener("error", () => reject(open.error));
+    open.addEventListener("success", () => {
+      const database = open.result;
+      const transaction = database.transaction("progress", "readonly");
+      const request = transaction.objectStore("progress").get("active");
+      request.addEventListener("success", () => resolve(request.result));
+      request.addEventListener("error", () => reject(request.error));
+      transaction.addEventListener("complete", () => database.close());
     });
   });
 }
