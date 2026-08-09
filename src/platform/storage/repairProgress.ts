@@ -7,7 +7,6 @@ import type {
   LearningSettings,
   LessonStage,
   RowReviewProgress,
-  WordProgress,
 } from "../../features/learning/model/types";
 
 const LESSON_STAGES = new Set<LessonStage>([
@@ -53,17 +52,6 @@ function repairKanaProgress(value: unknown, initial: KanaProgress): KanaProgress
   };
 }
 
-/** 単語の各体験状態を、値ごとに安全な初期値へ補正する。 */
-function repairWordProgress(value: unknown): WordProgress {
-  const candidate = isRecord(value) ? value : {};
-
-  return {
-    selected: typeof candidate.selected === "boolean" ? candidate.selected : false,
-    arranged: typeof candidate.arranged === "boolean" ? candidate.arranged : false,
-    writingTried: typeof candidate.writingTried === "boolean" ? candidate.writingTried : false,
-  };
-}
-
 /** 音声・演出設定を、値ごとに安全な初期値へ補正する。 */
 function repairSettings(value: unknown, initial: LearningSettings): LearningSettings {
   const candidate = isRecord(value) ? value : {};
@@ -98,7 +86,8 @@ function repairRowReview(
 
 /** 外部・旧形式の保存値を、現在の安全な学習進捗へ部分復旧する。
  *
- * 未知のスキーマは新規進捗へ戻し、既知スキーマでは壊れた文字・設定・単語だけを初期値へ戻す。
+ * 未知のスキーマは新規進捗へ戻し、既知スキーマでは壊れた文字・設定だけを初期値へ戻す。
+ * 単語カタログが未導入の間は、任意キーを保存しないため単語進捗を空にする。
  * 入力オブジェクトは変更しない。
  */
 export function repairProgress(raw: unknown): LearningProgress {
@@ -115,25 +104,23 @@ export function repairProgress(raw: unknown): LearningProgress {
     ? raw.stage as LessonStage
     : initial.stage;
   const rawKana = isRecord(raw.kana) ? raw.kana : {};
-  const rawWords = isRecord(raw.words) ? raw.words : {};
 
   const kana = Object.fromEntries(
     KANA_ORDER.map((character) => [character, repairKanaProgress(rawKana[character], initial.kana[character])]),
   ) as Record<KanaCharacter, KanaProgress>;
-  const words = Object.fromEntries(
-    Object.entries(rawWords)
-      .filter(([wordId]) => wordId.length > 0)
-      .map(([wordId, progress]) => [wordId, repairWordProgress(progress)]),
-  ) as Record<string, WordProgress>;
-  const currentKana = KANA_ORDER[currentKanaIndex] ?? KANA_ORDER[0];
+  const firstIncompleteIndex = KANA_ORDER.findIndex((character) => !kana[character].completedOnce);
+  const restorePrefix = firstIncompleteIndex >= 0 && currentKanaIndex > firstIncompleteIndex;
+  const restoredIndex = restorePrefix ? firstIncompleteIndex : currentKanaIndex;
+  const restoredStage = restorePrefix ? initial.stage : stage;
+  const currentKana = KANA_ORDER[restoredIndex] ?? KANA_ORDER[0];
 
   return {
     schemaVersion: 1,
-    currentKanaIndex,
-    stage,
-    rowReview: hasValidCurrentKanaIndex ? repairRowReview(raw.rowReview, currentKana, stage) : null,
+    currentKanaIndex: restoredIndex,
+    stage: restoredStage,
+    rowReview: hasValidCurrentKanaIndex && !restorePrefix ? repairRowReview(raw.rowReview, currentKana, restoredStage) : null,
     kana,
-    words,
+    words: {},
     settings: repairSettings(raw.settings, initial.settings),
   };
 }

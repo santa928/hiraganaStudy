@@ -2,13 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import { KANA_ORDER } from "../../features/learning/content/kana";
 import { createInitialProgress } from "../../features/learning/model/reducer";
-import { progressAt } from "../../test/fixtures/progress";
+import { progressAt, progressWithCompletedCount } from "../../test/fixtures/progress";
 import { repairProgress } from "./repairProgress";
 
+/** 五十音順に先行文字を完了した、実際に再開可能な進捗を作る。 */
+function resumableProgressAt(character: (typeof KANA_ORDER)[number], stage: ReturnType<typeof progressAt>["stage"]) {
+  return {
+    ...progressWithCompletedCount(KANA_ORDER.indexOf(character)),
+    currentKanaIndex: KANA_ORDER.indexOf(character),
+    stage,
+  };
+}
+
 describe("repairProgress", () => {
-  it("正常な保存進捗を復元し、保存用に知らないフィールドを除く", () => {
+  it("正常な保存進捗を復元し、保存用に知らないフィールドと単語を除く", () => {
     const raw = {
-      ...progressAt("く", "traceNarrow"),
+      ...resumableProgressAt("く", "traceNarrow"),
       words: { neko: { selected: true, arranged: false, writingTried: true } },
       settings: { speech: false, music: true, effects: false, reducedMotion: true },
       name: "たろう",
@@ -16,8 +25,8 @@ describe("repairProgress", () => {
     };
 
     expect(repairProgress(raw)).toEqual({
-      ...progressAt("く", "traceNarrow"),
-      words: { neko: { selected: true, arranged: false, writingTried: true } },
+      ...resumableProgressAt("く", "traceNarrow"),
+      words: {},
       settings: { speech: false, music: true, effects: false, reducedMotion: true },
     });
   });
@@ -45,9 +54,9 @@ describe("repairProgress", () => {
     expect(repaired.kana["く"]).toEqual(createInitialProgress().kana["く"]);
   });
 
-  it("個別の単語と設定の壊れた値だけを初期値へ戻す", () => {
+  it("単語カタログ未導入時は任意キーを保存進捗へ残さず、設定だけを部分復旧する", () => {
     const raw = {
-      ...progressAt("く", "traceNarrow"),
+      ...resumableProgressAt("く", "traceNarrow"),
       words: {
         neko: { selected: true, arranged: "invalid", writingTried: true },
         inu: { selected: "invalid", arranged: false, writingTried: false },
@@ -56,10 +65,7 @@ describe("repairProgress", () => {
     };
 
     expect(repairProgress(raw)).toMatchObject({
-      words: {
-        neko: { selected: true, arranged: false, writingTried: true },
-        inu: { selected: false, arranged: false, writingTried: false },
-      },
+      words: {},
       settings: { speech: false, music: true, effects: false, reducedMotion: false },
     });
   });
@@ -72,7 +78,7 @@ describe("repairProgress", () => {
 
   it("現在位置と行復習の意味的に不整合な値だけを安全な値へ戻す", () => {
     const raw = {
-      ...progressAt("く", "traceNarrow"),
+      ...resumableProgressAt("く", "traceNarrow"),
       currentKanaIndex: KANA_ORDER.indexOf("く"),
       rowReview: { row: "a", step: "shape" },
     };
@@ -81,6 +87,41 @@ describe("repairProgress", () => {
       currentKanaIndex: KANA_ORDER.indexOf("く"),
       stage: "traceNarrow",
       rowReview: null,
+    });
+  });
+
+  it("途中の壊れた文字を初期化したときは、最初の未完了文字から安全に再開する", () => {
+    const raw = structuredClone(progressWithCompletedCount(46)) as {
+      currentKanaIndex: number;
+      stage: string;
+      rowReview: unknown;
+      kana: Record<string, unknown>;
+    };
+    raw.currentKanaIndex = KANA_ORDER.indexOf("ん");
+    raw.stage = "reward";
+    raw.rowReview = { row: "wa", step: "shape" };
+    raw.kana["く"] = { ...(raw.kana["く"] as object), completedOnce: "invalid" };
+
+    const repaired = repairProgress(raw);
+
+    expect(repaired.currentKanaIndex).toBe(KANA_ORDER.indexOf("く"));
+    expect(repaired.stage).toBe("intro");
+    expect(repaired.rowReview).toBeNull();
+    expect(repaired.kana["ん"].completedOnce).toBe(true);
+  });
+
+  it("全完了済みの正しい行復習は現在位置とともに保持する", () => {
+    const raw = {
+      ...progressWithCompletedCount(46),
+      currentKanaIndex: KANA_ORDER.indexOf("ん"),
+      stage: "shapeMatch" as const,
+      rowReview: { row: "wa", step: "shape" as const },
+    };
+
+    expect(repairProgress(raw)).toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("ん"),
+      stage: "shapeMatch",
+      rowReview: { row: "wa", step: "shape" },
     });
   });
 

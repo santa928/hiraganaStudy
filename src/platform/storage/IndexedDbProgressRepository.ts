@@ -12,32 +12,88 @@ export const PROGRESS_RECORD_KEY = "active";
 /** IndexedDB障害時に使う小さなlocalStorageキー。 */
 export const FALLBACK_PROGRESS_STORAGE_KEY = "hiragana-no-niwa:progress:v1";
 
+/** 保存先の世代逆転を防ぐ、後方互換な進捗レコード。 */
+export interface ProgressEnvelope {
+  readonly revision: number;
+  readonly progress: LearningProgress;
+}
+
 /** テストまたは埋め込み環境でブラウザ保存APIを差し替える依存。 */
 export interface ProgressRepositoryDependencies {
   readonly indexedDb?: IDBFactory | null;
   readonly localStorage?: Storage | null;
 }
 
-/** IndexedDBを開く処理をPromiseへ変換する。 */
+interface ProgressCandidate {
+  readonly revision: number;
+  readonly progress: unknown;
+}
+
+interface ReadOutcome {
+  readonly candidate: ProgressCandidate | null;
+  readonly failed: boolean;
+}
+
+/** 保存値の型境界で、配列を除くオブジェクトかを判定する。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 旧形式の生進捗とrevision付きレコードを同じ候補表現へ変換する。 */
+function toCandidate(value: unknown): ProgressCandidate | null {
+  if (value === undefined) return null;
+
+  if (
+    isRecord(value)
+    && typeof value.revision === "number"
+    && Number.isSafeInteger(value.revision)
+    && value.revision > 0
+    && Object.hasOwn(value, "progress")
+  ) {
+    return { revision: value.revision, progress: value.progress };
+  }
+
+  return { revision: 0, progress: value };
+}
+
+/** IndexedDBを開く処理をPromiseへ変換し、blocked時に遅延接続を閉じる。 */
 function openDatabase(indexedDb: IDBFactory, databaseName: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let request: IDBOpenDBRequest;
+    let settled = false;
+
+    const rejectOnce = (reason: unknown): void => {
+      if (settled) return;
+      settled = true;
+      reject(reason);
+    };
 
     try {
       request = indexedDb.open(databaseName, 1);
     } catch (error) {
-      reject(error);
+      rejectOnce(error);
       return;
     }
 
     request.addEventListener("upgradeneeded", () => {
+      if (settled) return;
       const database = request.result;
       if (!database.objectStoreNames.contains(PROGRESS_OBJECT_STORE_NAME)) {
         database.createObjectStore(PROGRESS_OBJECT_STORE_NAME);
       }
     });
-    request.addEventListener("success", () => resolve(request.result));
-    request.addEventListener("error", () => reject(request.error ?? new Error("IndexedDBを開けませんでした。")));
+    request.addEventListener("blocked", () => {
+      rejectOnce(new Error("IndexedDBを開けませんでした。ほかの画面を閉じてください。"));
+    });
+    request.addEventListener("success", () => {
+      if (settled) {
+        request.result.close();
+        return;
+      }
+      settled = true;
+      resolve(request.result);
+    });
+    request.addEventListener("error", () => rejectOnce(request.error ?? new Error("IndexedDBを開けませんでした。")));
   });
 }
 
@@ -73,6 +129,7 @@ export class IndexedDbProgressRepository implements ProgressRepository {
   private readonly indexedDb: IDBFactory | null;
   private readonly fallbackStorage: Storage | null;
   private isStorageDegraded = false;
+  private latestRevision = 0;
 
   /** テスト用DB名・依存差し替えを許可しつつ、通常はブラウザ既定の保存APIを使う。 */
   public constructor(
@@ -89,24 +146,27 @@ export class IndexedDbProgressRepository implements ProgressRepository {
     return this.isStorageDegraded;
   }
 
-  /** 主保存を読み、保存がない場合または障害時は代替保存から安全に復元する。 */
+  /** 両保存先を比較し、より新しい進捗を安全に復元する。 */
   public async load(): Promise<LearningProgress> {
-    try {
-      const saved = await this.readPrimary();
-      if (saved !== undefined) return repairProgress(saved);
-    } catch {
-      this.markStorageDegraded();
+    const [primary, fallback] = await Promise.all([this.readPrimaryOutcome(), this.readFallbackOutcome()]);
+    const selected = this.selectNewest(primary.candidate, fallback.candidate);
+
+    if (!selected) {
+      if (primary.failed || fallback.failed) this.markStorageDegraded();
+      return createInitialProgress();
     }
 
-    return this.readFallback();
+    if (selected === fallback.candidate) this.markStorageDegraded();
+    return repairProgress(selected.progress);
   }
 
-  /** 主保存に書き込み、失敗した場合だけ代替保存へ既知の最小進捗を書き込む。 */
+  /** 主保存に書き込み、失敗時は同一世代の進捗を代替保存へ書き込む。 */
   public async save(progress: LearningProgress): Promise<void> {
-    const repaired = repairProgress(progress);
+    const envelope = await this.createNextEnvelope(progress);
 
     try {
-      await this.writePrimary(repaired);
+      await this.writePrimary(envelope);
+      await this.deleteFallbackBestEffort();
       return;
     } catch {
       this.markStorageDegraded();
@@ -114,7 +174,7 @@ export class IndexedDbProgressRepository implements ProgressRepository {
 
     try {
       if (!this.fallbackStorage) throw new Error("localStorageを利用できません。");
-      this.fallbackStorage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(repaired));
+      this.fallbackStorage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(envelope));
     } catch {
       this.markStorageDegraded();
     }
@@ -125,6 +185,28 @@ export class IndexedDbProgressRepository implements ProgressRepository {
     const results = await Promise.allSettled([this.deletePrimary(), this.deleteFallback()]);
 
     if (results.some((result) => result.status === "rejected")) this.markStorageDegraded();
+  }
+
+  /** 既存世代をseedし、時計に依存しない単調増加revisionを割り当てる。 */
+  private async createNextEnvelope(progress: LearningProgress): Promise<ProgressEnvelope> {
+    const [primary, fallback] = await Promise.all([this.readPrimaryOutcome(), this.readFallbackOutcome()]);
+    const previousRevision = Math.max(
+      this.latestRevision,
+      primary.candidate?.revision ?? 0,
+      fallback.candidate?.revision ?? 0,
+    );
+    this.latestRevision = previousRevision + 1;
+
+    if (primary.failed) this.markStorageDegraded();
+
+    return { revision: this.latestRevision, progress: repairProgress(progress) };
+  }
+
+  /** 新旧候補のうちrevisionが大きい方を選び、同値ではprimaryを優先する。 */
+  private selectNewest(primary: ProgressCandidate | null, fallback: ProgressCandidate | null): ProgressCandidate | null {
+    if (!primary) return fallback;
+    if (!fallback || primary.revision >= fallback.revision) return primary;
+    return fallback;
   }
 
   /** IndexedDBのアクティブレコードを読み出す。 */
@@ -142,14 +224,23 @@ export class IndexedDbProgressRepository implements ProgressRepository {
     }
   }
 
+  /** 主保存の読み取り失敗をload/save内部で扱える結果へ変換する。 */
+  private async readPrimaryOutcome(): Promise<ReadOutcome> {
+    try {
+      return { candidate: toCandidate(await this.readPrimary()), failed: false };
+    } catch {
+      return { candidate: null, failed: true };
+    }
+  }
+
   /** IndexedDBのアクティブレコードを安全な保存形式で書き込む。 */
-  private async writePrimary(progress: LearningProgress): Promise<void> {
+  private async writePrimary(envelope: ProgressEnvelope): Promise<void> {
     const database = await this.requireDatabase();
 
     try {
       const transaction = database.transaction(PROGRESS_OBJECT_STORE_NAME, "readwrite");
       const completed = transactionResult(transaction);
-      const request = transaction.objectStore(PROGRESS_OBJECT_STORE_NAME).put(progress, PROGRESS_RECORD_KEY);
+      const request = transaction.objectStore(PROGRESS_OBJECT_STORE_NAME).put(envelope, PROGRESS_RECORD_KEY);
       await Promise.all([requestResult(request), completed]);
     } finally {
       database.close();
@@ -170,15 +261,23 @@ export class IndexedDbProgressRepository implements ProgressRepository {
     }
   }
 
-  /** 代替JSONを読み、破損・容量制限などの失敗を初期状態へ閉じ込める。 */
-  private readFallback(): LearningProgress {
+  /** localStorageの生値を旧形式・envelope両対応の候補へ変換する。 */
+  private readFallbackOutcome(): ReadOutcome {
     try {
       if (!this.fallbackStorage) throw new Error("localStorageを利用できません。");
       const raw = this.fallbackStorage.getItem(FALLBACK_PROGRESS_STORAGE_KEY);
-      return raw === null ? createInitialProgress() : repairProgress(JSON.parse(raw) as unknown);
+      return { candidate: raw === null ? null : toCandidate(JSON.parse(raw) as unknown), failed: false };
     } catch {
-      this.markStorageDegraded();
-      return createInitialProgress();
+      return { candidate: null, failed: true };
+    }
+  }
+
+  /** primary成功後に古い代替保存を削除する。失敗しても新しいprimaryは有効なままにする。 */
+  private async deleteFallbackBestEffort(): Promise<void> {
+    try {
+      await this.deleteFallback();
+    } catch {
+      // primaryの新しいrevisionを優先できるため、ここではセッションを劣化扱いにしない。
     }
   }
 
