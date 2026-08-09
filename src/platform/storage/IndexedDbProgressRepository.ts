@@ -15,6 +15,8 @@ export const FALLBACK_PROGRESS_STORAGE_KEY = "hiragana-no-niwa:progress:v1";
 /** 保存先の世代逆転を防ぐ、後方互換な進捗レコード。 */
 export interface ProgressEnvelope {
   readonly revision: number;
+  readonly writtenAt: number;
+  readonly writeId: string;
   readonly progress: LearningProgress;
 }
 
@@ -22,10 +24,14 @@ export interface ProgressEnvelope {
 export interface ProgressRepositoryDependencies {
   readonly indexedDb?: IDBFactory | null;
   readonly localStorage?: Storage | null;
+  readonly now?: () => number;
+  readonly createWriteId?: () => string;
 }
 
 interface ProgressCandidate {
   readonly revision: number;
+  readonly writtenAt: number;
+  readonly writeId: string;
   readonly progress: unknown;
 }
 
@@ -39,6 +45,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+let fallbackWriteIdSequence = 0;
+let writeIdSequence = 0;
+
+/** performanceの高精度時刻を優先し、利用できない環境では現在時刻を返す。 */
+function getBrowserWrittenAt(): number {
+  const browserPerformance = globalThis.performance;
+
+  if (
+    browserPerformance
+    && typeof browserPerformance.timeOrigin === "number"
+    && typeof browserPerformance.now === "function"
+  ) {
+    return browserPerformance.timeOrigin + browserPerformance.now();
+  }
+
+  return Date.now();
+}
+
+/** ブラウザで一意な保存IDを作り、randomUUID未対応時も衝突しにくくする。 */
+function createBrowserWriteId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+
+  fallbackWriteIdSequence += 1;
+  return `${Date.now().toString(36)}-${fallbackWriteIdSequence.toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 /** 旧形式の生進捗とrevision付きレコードを同じ候補表現へ変換する。 */
 function toCandidate(value: unknown): ProgressCandidate | null {
   if (value === undefined) return null;
@@ -50,10 +82,17 @@ function toCandidate(value: unknown): ProgressCandidate | null {
     && value.revision > 0
     && Object.hasOwn(value, "progress")
   ) {
-    return { revision: value.revision, progress: value.progress };
+    return {
+      revision: value.revision,
+      writtenAt: typeof value.writtenAt === "number" && Number.isFinite(value.writtenAt)
+        ? value.writtenAt
+        : Number.NEGATIVE_INFINITY,
+      writeId: typeof value.writeId === "string" ? value.writeId : "",
+      progress: value.progress,
+    };
   }
 
-  return { revision: 0, progress: value };
+  return { revision: 0, writtenAt: Number.NEGATIVE_INFINITY, writeId: "", progress: value };
 }
 
 /** IndexedDBを開く処理をPromiseへ変換し、blocked時に遅延接続を閉じる。 */
@@ -128,6 +167,8 @@ export class IndexedDbProgressRepository implements ProgressRepository {
   private readonly databaseName: string;
   private readonly indexedDb: IDBFactory | null;
   private readonly fallbackStorage: Storage | null;
+  private readonly now: () => number;
+  private readonly createWriteId: () => string;
   private isStorageDegraded = false;
   private latestRevision = 0;
 
@@ -139,6 +180,8 @@ export class IndexedDbProgressRepository implements ProgressRepository {
     this.databaseName = databaseName;
     this.indexedDb = "indexedDb" in dependencies ? dependencies.indexedDb ?? null : globalThis.indexedDB ?? null;
     this.fallbackStorage = "localStorage" in dependencies ? dependencies.localStorage ?? null : getBrowserLocalStorage();
+    this.now = dependencies.now ?? getBrowserWrittenAt;
+    this.createWriteId = dependencies.createWriteId ?? createBrowserWriteId;
   }
 
   /** 主保存先または代替保存先で障害が起きたかを返す。現在セッション中はtrueを維持する。 */
@@ -199,14 +242,31 @@ export class IndexedDbProgressRepository implements ProgressRepository {
 
     if (primary.failed) this.markStorageDegraded();
 
-    return { revision: this.latestRevision, progress: repairProgress(progress) };
+    const measuredAt = this.now();
+    const writtenAt = Number.isFinite(measuredAt) ? measuredAt : Date.now();
+    writeIdSequence += 1;
+    const baseWriteId = this.createWriteId();
+
+    return {
+      revision: this.latestRevision,
+      writtenAt,
+      writeId: `${baseWriteId || "write"}-${writeIdSequence}`,
+      progress: repairProgress(progress),
+    };
   }
 
-  /** 新旧候補のうちrevisionが大きい方を選び、同値ではprimaryを優先する。 */
+  /** 新旧候補の(revision, writtenAt, writeId)全順序で大きい方を選ぶ。 */
   private selectNewest(primary: ProgressCandidate | null, fallback: ProgressCandidate | null): ProgressCandidate | null {
     if (!primary) return fallback;
-    if (!fallback || primary.revision >= fallback.revision) return primary;
+    if (!fallback || this.compareCandidate(primary, fallback) >= 0) return primary;
     return fallback;
+  }
+
+  /** 保存候補を世代、高精度保存時刻、一意IDの順で比較する。 */
+  private compareCandidate(first: ProgressCandidate, second: ProgressCandidate): number {
+    if (first.revision !== second.revision) return first.revision - second.revision;
+    if (first.writtenAt !== second.writtenAt) return first.writtenAt - second.writtenAt;
+    return first.writeId.localeCompare(second.writeId);
   }
 
   /** IndexedDBのアクティブレコードを読み出す。 */

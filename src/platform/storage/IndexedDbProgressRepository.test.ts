@@ -10,6 +10,7 @@ import type { progressAt } from "../../test/fixtures/progress";
 import {
   FALLBACK_PROGRESS_STORAGE_KEY,
   IndexedDbProgressRepository,
+  type ProgressEnvelope,
 } from "./IndexedDbProgressRepository";
 
 const TEST_DATABASES: string[] = [];
@@ -106,6 +107,90 @@ describe("IndexedDbProgressRepository", () => {
       stage: "traceNarrow",
     });
     expect(repository.storageDegraded).toBe(true);
+  });
+
+  it("同revisionではwrittenAtが新しいfallbackを採用して保存劣化を通知する", async () => {
+    const databaseName = testDatabaseName();
+    const storage = new MapStorage();
+    await writePrimaryRecord(databaseName, envelope(8, 100, "primary", resumableProgressAt("く", "traceNarrow")));
+    storage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(
+      envelope(8, 200, "fallback", resumableProgressAt("さ", "soundMatch")),
+    ));
+    const repository = new IndexedDbProgressRepository(databaseName, { localStorage: storage });
+
+    await expect(repository.load()).resolves.toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("さ"),
+      stage: "soundMatch",
+    });
+    expect(repository.storageDegraded).toBe(true);
+  });
+
+  it("2 repositoryが同じseed revisionで保存しても新しいfallbackを落とさない", async () => {
+    const databaseName = testDatabaseName();
+    const primaryDraftStorage = new MapStorage();
+    const fallbackDraftStorage = new MapStorage();
+    const primaryWriter = new IndexedDbProgressRepository(databaseName, {
+      indexedDb: null,
+      localStorage: primaryDraftStorage,
+      now: () => 100,
+      createWriteId: () => "primary-writer",
+    });
+    const fallbackWriter = new IndexedDbProgressRepository(databaseName, {
+      indexedDb: null,
+      localStorage: fallbackDraftStorage,
+      now: () => 200,
+      createWriteId: () => "fallback-writer",
+    });
+
+    await Promise.all([
+      primaryWriter.save(resumableProgressAt("く", "traceNarrow")),
+      fallbackWriter.save(resumableProgressAt("さ", "soundMatch")),
+    ]);
+
+    const primaryEnvelope = JSON.parse(primaryDraftStorage.getItem(FALLBACK_PROGRESS_STORAGE_KEY) ?? "null") as ProgressEnvelope;
+    const fallbackEnvelope = JSON.parse(fallbackDraftStorage.getItem(FALLBACK_PROGRESS_STORAGE_KEY) ?? "null") as ProgressEnvelope;
+    expect(primaryEnvelope.revision).toBe(fallbackEnvelope.revision);
+    expect(primaryEnvelope.writtenAt).toBeLessThan(fallbackEnvelope.writtenAt);
+    await writePrimaryRecord(databaseName, primaryEnvelope);
+    const sharedStorage = new MapStorage();
+    sharedStorage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(fallbackEnvelope));
+    const reader = new IndexedDbProgressRepository(databaseName, { localStorage: sharedStorage });
+
+    await expect(reader.load()).resolves.toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("さ"),
+      stage: "soundMatch",
+    });
+    expect(reader.storageDegraded).toBe(true);
+  });
+
+  it("同revisionではwrittenAtが新しいprimaryを採用する", async () => {
+    const databaseName = testDatabaseName();
+    const storage = new MapStorage();
+    await writePrimaryRecord(databaseName, envelope(8, 200, "primary", resumableProgressAt("く", "traceNarrow")));
+    storage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(
+      envelope(8, 100, "fallback", resumableProgressAt("さ", "soundMatch")),
+    ));
+    const repository = new IndexedDbProgressRepository(databaseName, { localStorage: storage });
+
+    await expect(repository.load()).resolves.toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("く"),
+      stage: "traceNarrow",
+    });
+    expect(repository.storageDegraded).toBe(false);
+  });
+
+  it("同revision・同timestampではwriteIdが大きいfallbackを決定的に採用する", async () => {
+    const databaseName = testDatabaseName();
+    const storage = new MapStorage();
+    await writePrimaryRecord(databaseName, envelope(8, 100, "a-primary", resumableProgressAt("く", "traceNarrow")));
+    storage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(
+      envelope(8, 100, "z-fallback", resumableProgressAt("さ", "soundMatch")),
+    ));
+
+    await expect(new IndexedDbProgressRepository(databaseName, { localStorage: storage }).load()).resolves.toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("さ"),
+      stage: "soundMatch",
+    });
   });
 
   it("putだけが失敗しても新しいfallback世代を古いprimaryより優先して再開する", async () => {
@@ -255,6 +340,16 @@ function writePrimaryRecord(databaseName: string, value: unknown): Promise<void>
       transaction.addEventListener("error", () => reject(transaction.error));
     });
   });
+}
+
+/** 比較順テスト用に、保存メタデータを明示したenvelopeを作る。 */
+function envelope(
+  revision: number,
+  writtenAt: number,
+  writeId: string,
+  progress: ReturnType<typeof resumableProgressAt>,
+): ProgressEnvelope {
+  return { revision, writtenAt, writeId, progress };
 }
 
 /** ブラウザStorageと同じ振る舞いを持つ、テスト専用の小さなメモリ実装。 */

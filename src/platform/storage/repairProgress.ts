@@ -109,16 +109,19 @@ export function repairProgress(raw: unknown): LearningProgress {
     KANA_ORDER.map((character) => [character, repairKanaProgress(rawKana[character], initial.kana[character])]),
   ) as Record<KanaCharacter, KanaProgress>;
   const firstIncompleteIndex = KANA_ORDER.findIndex((character) => !kana[character].completedOnce);
-  const restorePrefix = firstIncompleteIndex >= 0 && currentKanaIndex > firstIncompleteIndex;
-  const restoredIndex = restorePrefix ? firstIncompleteIndex : currentKanaIndex;
-  const restoredStage = restorePrefix ? initial.stage : stage;
-  const currentKana = KANA_ORDER[restoredIndex] ?? KANA_ORDER[0];
+  const allCompleted = firstIncompleteIndex < 0;
+  const normalizedIndex = allCompleted ? KANA_ORDER.length - 1 : firstIncompleteIndex;
+  const positionChanged = currentKanaIndex !== normalizedIndex;
+  const normalizedStage = allCompleted ? "reward" : positionChanged ? initial.stage : stage;
+  const currentKana = KANA_ORDER[normalizedIndex] ?? KANA_ORDER[0];
 
   return {
     schemaVersion: 1,
-    currentKanaIndex: restoredIndex,
-    stage: restoredStage,
-    rowReview: hasValidCurrentKanaIndex && !restorePrefix ? repairRowReview(raw.rowReview, currentKana, restoredStage) : null,
+    currentKanaIndex: normalizedIndex,
+    stage: normalizedStage,
+    rowReview: !allCompleted && hasValidCurrentKanaIndex && !positionChanged
+      ? repairRowReview(raw.rowReview, currentKana, normalizedStage)
+      : null,
     kana,
     words: {},
     settings: repairSettings(raw.settings, initial.settings),

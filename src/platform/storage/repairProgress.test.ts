@@ -90,6 +90,34 @@ describe("repairProgress", () => {
     });
   });
 
+  it.each([
+    ["無効なindex", -1],
+    ["最初の未完了文字より前のindex", 0],
+  ])("先頭5文字完了時は%sでも最初の未完了文字かへ復旧する", (_description, currentKanaIndex) => {
+    const raw = {
+      ...progressWithCompletedCount(5),
+      currentKanaIndex,
+      stage: "traceNarrow" as const,
+      rowReview: { row: "a", step: "shape" as const },
+    };
+
+    expect(repairProgress(raw)).toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("か"),
+      stage: "intro",
+      rowReview: null,
+    });
+  });
+
+  it("最初の未完了文字にある正しい途中段階は保持する", () => {
+    const raw = resumableProgressAt("く", "traceNarrow");
+
+    expect(repairProgress(raw)).toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("く"),
+      stage: "traceNarrow",
+      rowReview: null,
+    });
+  });
+
   it("途中の壊れた文字を初期化したときは、最初の未完了文字から安全に再開する", () => {
     const raw = structuredClone(progressWithCompletedCount(46)) as {
       currentKanaIndex: number;
@@ -110,9 +138,9 @@ describe("repairProgress", () => {
     expect(repaired.kana["ん"].completedOnce).toBe(true);
   });
 
-  it("全完了済みの正しい行復習は現在位置とともに保持する", () => {
+  it("最終文字が最初の未完了なら正しい最終行reviewを保持する", () => {
     const raw = {
-      ...progressWithCompletedCount(46),
+      ...progressWithCompletedCount(45),
       currentKanaIndex: KANA_ORDER.indexOf("ん"),
       stage: "shapeMatch" as const,
       rowReview: { row: "wa", step: "shape" as const },
@@ -122,6 +150,21 @@ describe("repairProgress", () => {
       currentKanaIndex: KANA_ORDER.indexOf("ん"),
       stage: "shapeMatch",
       rowReview: { row: "wa", step: "shape" },
+    });
+  });
+
+  it("全完了状態は最終文字の安全な報酬段階へ正規化する", () => {
+    const raw = {
+      ...progressWithCompletedCount(46),
+      currentKanaIndex: 0,
+      stage: "shapeMatch" as const,
+      rowReview: { row: "a", step: "shape" as const },
+    };
+
+    expect(repairProgress(raw)).toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("ん"),
+      stage: "reward",
+      rowReview: null,
     });
   });
 
