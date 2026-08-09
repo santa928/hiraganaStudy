@@ -10,7 +10,9 @@
     "test": "vitest",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
-    "verify:images": "node scripts/verify-images.mjs",
+    "optimize:word-images": "node scripts/optimize-word-images.mjs",
+    "verify:word-images": "node scripts/verify-word-images.mjs",
+    "verify:images": "node scripts/verify-images.mjs && node scripts/verify-word-images.mjs",
     "verify:content": "node -e \"console.log('Content verification is not configured yet.')\""
   },
   "dependencies": {
