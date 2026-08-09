@@ -43,7 +43,10 @@ export function ParentDashboard({ progress, environment, onSettingsChange, onRes
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const settings = progress.settings;
   const changeSetting = (key: keyof LearningSettings): void => onSettingsChange({ ...settings, [key]: !settings[key] });
   const touchLeaf = (leaf: typeof LEAVES[number]): void => {
@@ -66,7 +69,7 @@ export function ParentDashboard({ progress, environment, onSettingsChange, onRes
   return <main className="parentDashboard" aria-label="おとなの せってい">
     <header className="parentDashboard__header"><h1>おとなの せってい</h1><button type="button" aria-label="にわへ もどる" onClick={onClose}>にわへ もどる</button></header>
     <section><h2>いまの きろく</h2><p>いまは「{KANA_ENTRIES[progress.currentKanaIndex]?.character ?? "あ"}」の ところです。</p>
-      <div className="parentDashboard__tableWrap"><table><thead><tr><th>もじ</th>{STATUS_FIELDS.map(([field, label]) => <th key={field}>{label}</th>)}<th>もういちど案内した文字</th></tr></thead><tbody>{KANA_ENTRIES.map((entry) => {
+      <div className="parentDashboard__tableWrap"><table><thead><tr><th>もじ</th>{STATUS_FIELDS.map(([field, label]) => <th key={field}>{label}</th>)}<th>もういちど案内した回数</th></tr></thead><tbody>{KANA_ENTRIES.map((entry) => {
         const item = progress.kana[entry.character];
         return <tr key={entry.character}><th>{entry.character}</th>{STATUS_FIELDS.map(([field]) => <td key={field}>{item[field] ? "✓" : "—"}</td>)}<td>{item.guideCount}</td></tr>;
       })}</tbody></table></div>

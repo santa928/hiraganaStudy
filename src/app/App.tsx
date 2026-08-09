@@ -19,6 +19,7 @@ import { SoundEffects } from "../platform/audio/SoundEffects";
 /** SoundEffectsの実装をブラウザAudioContextから切り離す最小の注入口。 */
 export interface AppSoundEffects {
   applySettings(settings: Pick<LearningSettings, "speech" | "music" | "effects">): void;
+  setSpeechActive?(active: boolean): void;
   startGardenLoop(): Promise<void>;
   stopGardenLoop(): void;
   play(name: "tap" | "success" | "sprout"): Promise<void>;
@@ -32,6 +33,11 @@ export interface AppProps {
 }
 
 type EntryScreen = "soundGate" | "watering" | "garden" | "lesson" | "rowReview" | "parent";
+
+/** 読み上げ中だけ、対応する効果音実装へducking状態を伝える。 */
+export function createSpeechDuckingHandler(effects: AppSoundEffects): (active: boolean) => void {
+  return (active) => effects.setSpeechActive?.(active);
+}
 
 /** 初回を除き、再起動時にまず庭へ戻すべき進捗かを判定する。 */
 function hasStartedLesson(state: LearningState): boolean {
@@ -53,13 +59,13 @@ function screenForRoute(state: LearningState): EntryScreen {
 export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: suppliedEffects }: AppProps = {}): JSX.Element {
   const runtimeRef = useRef<GameRuntime | null>(null);
   if (runtimeRef.current === null) runtimeRef.current = suppliedRuntime ?? createBrowserRuntime();
-  const audioRef = useRef<AudioGuide | null>(null);
-  if (audioRef.current === null) audioRef.current = suppliedAudio ?? new BrowserSpeechGuide();
   const effectsRef = useRef<AppSoundEffects | null>(null);
   if (effectsRef.current === null) effectsRef.current = suppliedEffects ?? new SoundEffects();
+  const effects = effectsRef.current;
+  const audioRef = useRef<AudioGuide | null>(null);
+  if (audioRef.current === null) audioRef.current = suppliedAudio ?? new BrowserSpeechGuide({ onSpeakingChange: createSpeechDuckingHandler(effects) });
   const runtime = runtimeRef.current;
   const audio = audioRef.current;
-  const effects = effectsRef.current;
   const [state, setState] = useState<LearningState>(() => reduceLesson(
     { progress: createInitialProgress(), currentKana: "あ", stage: "intro" },
     { type: "RESUME", progress: createInitialProgress() },
@@ -72,11 +78,20 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
   const snapshotRef = useRef("{}");
   const mountedRef = useRef(true);
   const resetInFlightRef = useRef(false);
+  const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const persistenceGenerationRef = useRef(0);
   const route = selectRoute(state.progress);
   const entry = useMemo(() => findKana(state.currentKana), [state.currentKana]);
 
   const dispatch = useCallback((event: LessonEvent): void => {
     setState((current) => reduceLesson(current, event));
+  }, []);
+
+  /** saveとresetを一列にし、古いsaveがreset済みの進捗を復活させない。 */
+  const queuePersistence = useCallback((operation: () => Promise<void>): Promise<void> => {
+    const queued = persistenceQueueRef.current.then(operation, operation);
+    persistenceQueueRef.current = queued.catch(() => undefined);
+    return queued;
   }, []);
 
   useEffect(() => {
@@ -103,8 +118,12 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
       skipInitialSaveRef.current = false;
       return;
     }
-    void runtime.progressRepository.save(state.progress).catch(() => undefined);
-  }, [hasHydrated, runtime, state.progress]);
+    const generation = persistenceGenerationRef.current;
+    void queuePersistence(async () => {
+      if (generation !== persistenceGenerationRef.current) return;
+      await runtime.progressRepository.save(state.progress);
+    }).catch(() => undefined);
+  }, [hasHydrated, queuePersistence, runtime, state.progress]);
 
   useEffect(() => {
     effects.applySettings(state.progress.settings);
@@ -185,13 +204,15 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     setReviewState(reduceLesson(reviewState, event));
   };
   const changeSettings = (settings: LearningSettings): void => {
+    if (resetInFlightRef.current) return;
     setState((current) => ({ ...current, progress: { ...current.progress, settings } }));
   };
   const reset = async (): Promise<void> => {
     if (resetInFlightRef.current) return;
     resetInFlightRef.current = true;
+    persistenceGenerationRef.current += 1;
     try {
-      await runtime.progressRepository.reset();
+      await queuePersistence(() => runtime.progressRepository.reset());
       if (!mountedRef.current) return;
       skipInitialSaveRef.current = true;
       setState({ progress: createInitialProgress(), currentKana: "あ", stage: "intro" });

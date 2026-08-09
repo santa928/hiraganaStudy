@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { App, type AppSoundEffects } from "./App";
+import { App, createSpeechDuckingHandler, type AppSoundEffects } from "./App";
 import type { GameRuntime } from "./GameRuntime";
 import { createLessonChoices } from "../features/lesson/LessonScreen";
 import { createInitialProgress, reduceLesson } from "../features/learning/model/reducer";
@@ -18,6 +18,17 @@ function createRuntime(load: () => Promise<LearningProgress>): { readonly runtim
 }
 
 describe("App", () => {
+  it("production音声の開始・終了を効果音duckingへ伝える", () => {
+    const setSpeechActive = vi.fn();
+    const effects: AppSoundEffects = { applySettings: vi.fn(), setSpeechActive, startGardenLoop: vi.fn().mockResolvedValue(undefined), stopGardenLoop: vi.fn(), play: vi.fn().mockResolvedValue(undefined) };
+
+    const onSpeakingChange = createSpeechDuckingHandler(effects);
+    onSpeakingChange(true);
+    onSpeakingChange(false);
+    expect(setSpeechActive).toHaveBeenNthCalledWith(1, true);
+    expect(setSpeechActive).toHaveBeenNthCalledWith(2, false);
+  });
+
   it("初回は復元完了後に音声確認を一つだけ表示する", async () => {
     const { runtime } = createRuntime(() => Promise.resolve(createInitialProgress()));
     render(<App runtime={runtime} />);
@@ -189,5 +200,33 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "こうかおん" }));
     await waitFor(() => expect(effects.applySettings).toHaveBeenLastCalledWith(expect.objectContaining({ effects: false })));
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ settings: expect.objectContaining({ effects: false }) })));
+  });
+
+  it("保護者resetは進行中saveの完了後に実行し、古い進捗を書き戻さない", async () => {
+    const user = userEvent.setup();
+    const base = createInitialProgress();
+    const saved: LearningProgress = { ...base, kana: { ...base.kana, あ: { ...base.kana.あ, seen: true } } };
+    let resolveSave: (() => void) | undefined;
+    const save = vi.fn(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
+    const reset = vi.fn().mockResolvedValue(undefined);
+    const runtime: GameRuntime = { progressRepository: { load: vi.fn().mockResolvedValue(saved), save, reset }, storageDegraded: false };
+    render(<App runtime={runtime} />);
+
+    const gate = await screen.findByRole("button", { name: "おとなの せってい" });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(gate, { pointerId: 1 });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    fireEvent.pointerUp(gate, { pointerId: 1 });
+    vi.useRealTimers();
+    await user.click(screen.getByRole("checkbox", { name: "こうかおん" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    await user.click(screen.getByRole("button", { name: "ひだりの は" }));
+    await user.click(screen.getByRole("button", { name: "まんなかの は" }));
+    await user.click(screen.getByRole("button", { name: "みぎの は" }));
+    await user.click(screen.getByRole("button", { name: "ほんとうに はじめからにする" }));
+    expect(reset).not.toHaveBeenCalled();
+
+    await act(async () => { resolveSave?.(); });
+    await waitFor(() => expect(reset).toHaveBeenCalledOnce());
   });
 });

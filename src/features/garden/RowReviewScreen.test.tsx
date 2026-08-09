@@ -40,4 +40,13 @@ describe("RowReviewScreen", () => {
   it("わ行も3文字だけを候補にし、行外の文字を混ぜない", () => {
     expect(createRowReviewChoices("ん")).toEqual(["わ", "を", "ん"]);
   });
+
+  it("こえを切った時も再生中の案内を必ず停止する", () => {
+    const silentAudio: AudioGuide = { unlock: vi.fn(), speak: vi.fn(), cancel: vi.fn(), getStatus: () => "ready" };
+    const state = reviewState("よ", "ya", "shape");
+    render(<RowReviewScreen state={{ ...state, progress: { ...state.progress, settings: { ...state.progress.settings, speech: false } } }} dispatch={vi.fn()} audio={silentAudio} />);
+
+    expect(silentAudio.cancel).toHaveBeenCalled();
+    expect(silentAudio.speak).not.toHaveBeenCalled();
+  });
 });

@@ -50,8 +50,8 @@ export function RowReviewScreen({ state, dispatch, audio }: RowReviewScreenProps
 
   useEffect(() => {
     replayRequestRef.current += 1;
-    if (!state.progress.settings.speech) return;
     audio.cancel();
+    if (!state.progress.settings.speech) return;
     void audio.speak(guide, { interrupt: true });
     return () => audio.cancel();
   }, [audio, guide, state.progress.settings.speech]);
