@@ -163,6 +163,60 @@ describe("IndexedDbProgressRepository", () => {
     expect(reader.storageDegraded).toBe(true);
   });
 
+  it("共有fallbackでは遅い低順位writerが先に保存された高順位Bを上書きしない", async () => {
+    const databaseName = testDatabaseName();
+    const storage = new MapStorage();
+    const delayedPrimary = new DeferredSecondOpenFactory();
+    const lowWriter = new IndexedDbProgressRepository(databaseName, {
+      indexedDb: delayedPrimary,
+      localStorage: storage,
+      now: () => 100,
+      createWriteId: () => "a-low",
+    });
+    const lowSave = lowWriter.save(resumableProgressAt("く", "traceNarrow"));
+    await delayedPrimary.waitForSecondOpen();
+
+    await new IndexedDbProgressRepository(databaseName, {
+      indexedDb: null,
+      localStorage: storage,
+      now: () => 200,
+      createWriteId: () => "b-high",
+    }).save(resumableProgressAt("さ", "soundMatch"));
+    delayedPrimary.failSecondOpen();
+    await lowSave;
+
+    expect(JSON.parse(storage.getItem(FALLBACK_PROGRESS_STORAGE_KEY) ?? "null")).toMatchObject({
+      progress: { currentKanaIndex: KANA_ORDER.indexOf("さ"), stage: "soundMatch" },
+    });
+  });
+
+  it("primaryでは遅い低順位writerが先に保存された高順位Bを上書きしない", async () => {
+    const databaseName = testDatabaseName();
+    const storage = new MapStorage();
+    const delayedPrimary = new DeferredSecondOpenFactory();
+    const lowWriter = new IndexedDbProgressRepository(databaseName, {
+      indexedDb: delayedPrimary,
+      localStorage: storage,
+      now: () => 100,
+      createWriteId: () => "a-low",
+    });
+    const lowSave = lowWriter.save(resumableProgressAt("く", "traceNarrow"));
+    await delayedPrimary.waitForSecondOpen();
+
+    await new IndexedDbProgressRepository(databaseName, {
+      localStorage: storage,
+      now: () => 200,
+      createWriteId: () => "b-high",
+    }).save(resumableProgressAt("さ", "soundMatch"));
+    await delayedPrimary.succeedSecondOpen();
+    await lowSave;
+
+    await expect(new IndexedDbProgressRepository(databaseName, { localStorage: storage }).load()).resolves.toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("さ"),
+      stage: "soundMatch",
+    });
+  });
+
   it("同revisionではwrittenAtが新しいprimaryを採用する", async () => {
     const databaseName = testDatabaseName();
     const storage = new MapStorage();
@@ -350,6 +404,63 @@ function envelope(
   progress: ReturnType<typeof resumableProgressAt>,
 ): ProgressEnvelope {
   return { revision, writtenAt, writeId, progress };
+}
+
+/** 1回目だけ実IndexedDBを開き、2回目のopenをテストが成功・失敗へ制御できるfactory。 */
+class DeferredSecondOpenFactory implements IDBFactory {
+  private readonly secondOpenReady: Promise<void>;
+  private resolveSecondOpenReady: (() => void) | null = null;
+  private openParameters: Parameters<IDBFactory["open"]> | null = null;
+  private secondOpenRequest: IDBOpenDBRequest | null = null;
+  private openCount = 0;
+
+  public constructor() {
+    this.secondOpenReady = new Promise((resolve) => {
+      this.resolveSecondOpenReady = resolve;
+    });
+  }
+
+  public open(...parameters: Parameters<IDBFactory["open"]>): IDBOpenDBRequest {
+    this.openCount += 1;
+    if (this.openCount !== 2) return indexedDB.open(...parameters);
+
+    this.openParameters = parameters;
+    this.secondOpenRequest = new EventTarget() as IDBOpenDBRequest;
+    this.resolveSecondOpenReady?.();
+    return this.secondOpenRequest;
+  }
+
+  public async waitForSecondOpen(): Promise<void> {
+    await this.secondOpenReady;
+  }
+
+  public failSecondOpen(): void {
+    const request = this.requireSecondOpenRequest();
+    request.dispatchEvent(new Event("error"));
+  }
+
+  public async succeedSecondOpen(): Promise<void> {
+    const request = this.requireSecondOpenRequest();
+    const parameters = this.openParameters;
+    if (!parameters) throw new Error("Delayed open parameters are missing.");
+    const nativeRequest = indexedDB.open(...parameters);
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      nativeRequest.addEventListener("success", () => resolve(nativeRequest.result));
+      nativeRequest.addEventListener("error", () => reject(nativeRequest.error));
+    });
+
+    Object.defineProperty(request, "result", { value: database });
+    request.dispatchEvent(new Event("success"));
+  }
+
+  public cmp(): number { return 0; }
+  public deleteDatabase(): IDBOpenDBRequest { throw new Error("Not implemented for this test factory."); }
+  public databases(): Promise<IDBDatabaseInfo[]> { return Promise.resolve([]); }
+
+  private requireSecondOpenRequest(): IDBOpenDBRequest {
+    if (!this.secondOpenRequest) throw new Error("Delayed open request is missing.");
+    return this.secondOpenRequest;
+  }
 }
 
 /** ブラウザStorageと同じ振る舞いを持つ、テスト専用の小さなメモリ実装。 */

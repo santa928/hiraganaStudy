@@ -40,6 +40,8 @@ interface ReadOutcome {
   readonly failed: boolean;
 }
 
+type PrimaryWriteResult = "written" | "kept-newer";
+
 /** 保存値の型境界で、配列を除くオブジェクトかを判定する。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -93,6 +95,11 @@ function toCandidate(value: unknown): ProgressCandidate | null {
   }
 
   return { revision: 0, writtenAt: Number.NEGATIVE_INFINITY, writeId: "", progress: value };
+}
+
+/** 新規保存用envelopeを、比較用候補へ型安全に変換する。 */
+function envelopeCandidate(envelope: ProgressEnvelope): ProgressCandidate {
+  return envelope;
 }
 
 /** IndexedDBを開く処理をPromiseへ変換し、blocked時に遅延接続を閉じる。 */
@@ -208,16 +215,15 @@ export class IndexedDbProgressRepository implements ProgressRepository {
     const envelope = await this.createNextEnvelope(progress);
 
     try {
-      await this.writePrimary(envelope);
-      await this.deleteFallbackBestEffort();
+      const primaryResult = await this.writePrimary(envelope);
+      if (primaryResult === "written") this.deleteFallbackIfNotNewer(envelope);
       return;
     } catch {
       this.markStorageDegraded();
     }
 
     try {
-      if (!this.fallbackStorage) throw new Error("localStorageを利用できません。");
-      this.fallbackStorage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(envelope));
+      this.writeFallbackIfNewer(envelope);
     } catch {
       this.markStorageDegraded();
     }
@@ -293,15 +299,42 @@ export class IndexedDbProgressRepository implements ProgressRepository {
     }
   }
 
-  /** IndexedDBのアクティブレコードを安全な保存形式で書き込む。 */
-  private async writePrimary(envelope: ProgressEnvelope): Promise<void> {
+  /** primaryを単一transactionで比較し、既存より新しい場合だけ保存する。 */
+  private async writePrimary(envelope: ProgressEnvelope): Promise<PrimaryWriteResult> {
     const database = await this.requireDatabase();
 
     try {
-      const transaction = database.transaction(PROGRESS_OBJECT_STORE_NAME, "readwrite");
-      const completed = transactionResult(transaction);
-      const request = transaction.objectStore(PROGRESS_OBJECT_STORE_NAME).put(envelope, PROGRESS_RECORD_KEY);
-      await Promise.all([requestResult(request), completed]);
+      return await new Promise<PrimaryWriteResult>((resolve, reject) => {
+        const transaction = database.transaction(PROGRESS_OBJECT_STORE_NAME, "readwrite");
+        const store = transaction.objectStore(PROGRESS_OBJECT_STORE_NAME);
+        let result: PrimaryWriteResult = "kept-newer";
+        let settled = false;
+
+        const rejectOnce = (reason: unknown): void => {
+          if (settled) return;
+          settled = true;
+          reject(reason);
+        };
+        const resolveOnce = (): void => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+        const existingRequest = store.get(PROGRESS_RECORD_KEY);
+
+        transaction.addEventListener("complete", resolveOnce);
+        transaction.addEventListener("abort", () => rejectOnce(transaction.error ?? new Error("IndexedDB transactionが中断されました。")));
+        transaction.addEventListener("error", () => rejectOnce(transaction.error ?? new Error("IndexedDB transactionに失敗しました。")));
+        existingRequest.addEventListener("error", () => rejectOnce(existingRequest.error ?? new Error("IndexedDB操作に失敗しました。")));
+        existingRequest.addEventListener("success", () => {
+          const existing = toCandidate(existingRequest.result);
+          if (existing && this.compareCandidate(existing, envelopeCandidate(envelope)) >= 0) return;
+
+          result = "written";
+          const putRequest = store.put(envelope, PROGRESS_RECORD_KEY);
+          putRequest.addEventListener("error", () => rejectOnce(putRequest.error ?? new Error("IndexedDB操作に失敗しました。")));
+        });
+      });
     } finally {
       database.close();
     }
@@ -332,12 +365,38 @@ export class IndexedDbProgressRepository implements ProgressRepository {
     }
   }
 
-  /** primary成功後に古い代替保存を削除する。失敗しても新しいprimaryは有効なままにする。 */
-  private async deleteFallbackBestEffort(): Promise<void> {
+  /** primaryがfallback以上である場合だけ、古いfallbackを同期的に削除する。 */
+  private deleteFallbackIfNotNewer(primary: ProgressEnvelope): void {
     try {
-      await this.deleteFallback();
+      if (!this.fallbackStorage) return;
+      const raw = this.fallbackStorage.getItem(FALLBACK_PROGRESS_STORAGE_KEY);
+      const fallback = raw === null ? null : toCandidate(JSON.parse(raw) as unknown);
+      const primaryCandidate = envelopeCandidate(primary);
+
+      if (!fallback || this.compareCandidate(primaryCandidate, fallback) >= 0) {
+        this.fallbackStorage.removeItem(FALLBACK_PROGRESS_STORAGE_KEY);
+      }
     } catch {
-      // primaryの新しいrevisionを優先できるため、ここではセッションを劣化扱いにしない。
+      // primary書込後のcleanup失敗は、保存済みprimaryを無効にしない。
+    }
+  }
+
+  /** fallbackを同期的に比較し、既存より新しい候補だけを書き込む。 */
+  private writeFallbackIfNewer(envelope: ProgressEnvelope): void {
+    if (!this.fallbackStorage) throw new Error("localStorageを利用できません。");
+
+    const raw = this.fallbackStorage.getItem(FALLBACK_PROGRESS_STORAGE_KEY);
+    let existing: ProgressCandidate | null;
+
+    try {
+      existing = raw === null ? null : toCandidate(JSON.parse(raw) as unknown);
+    } catch {
+      existing = null;
+    }
+
+    const candidate = envelopeCandidate(envelope);
+    if (!existing || this.compareCandidate(candidate, existing) > 0) {
+      this.fallbackStorage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(envelope));
     }
   }
 
