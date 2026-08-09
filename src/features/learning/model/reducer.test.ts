@@ -15,6 +15,10 @@ describe("学習状態機械", () => {
     expect(Object.values(progress.kana).every((kana) => !kana.completedOnce)).toBe(true);
   });
 
+  it("完成版のBGM初期設定はオフにする", () => {
+    expect(createInitialProgress().settings.music).toBe(false);
+  });
+
   it("STARTで導入を既読にし、CONTINUEで形合わせへ進む", () => {
     const started = reduceLesson(stateAt("あ", "intro"), { type: "START" });
     const continued = reduceLesson(started, { type: "CONTINUE" });

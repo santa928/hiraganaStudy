@@ -66,7 +66,7 @@ describe("repairProgress", () => {
 
     expect(repairProgress(raw)).toMatchObject({
       words: {},
-      settings: { speech: false, music: true, effects: false, reducedMotion: false },
+      settings: { speech: false, music: false, effects: false, reducedMotion: false },
     });
   });
 

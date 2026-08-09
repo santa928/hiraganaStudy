@@ -52,7 +52,7 @@ export function createInitialProgress(): LearningProgress {
     words: {},
     settings: {
       speech: true,
-      music: true,
+      music: false,
       effects: true,
       reducedMotion: false,
     },
