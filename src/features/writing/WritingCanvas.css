@@ -1,0 +1,57 @@
+.writingCanvasSurface {
+  position: relative;
+  min-inline-size: 64px;
+  min-block-size: 64px;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  border: 4px solid #475e88;
+  border-radius: 28px;
+  background: #fff4d3;
+  box-shadow: inset 0 0 0 5px rgb(255 255 255 / 35%), 0 5px 0 #dcbf7a;
+}
+
+.writingCanvasSurface::before,
+.writingCanvasSurface::after {
+  position: absolute;
+  z-index: 1;
+  inline-size: 20px;
+  block-size: 12px;
+  border-radius: 100% 0 100% 0;
+  background: rgb(118 163 107 / 48%);
+  content: "";
+  pointer-events: none;
+}
+
+.writingCanvasSurface::before {
+  inset-block-start: 12px;
+  inset-inline-start: 14px;
+  transform: rotate(-28deg);
+}
+
+.writingCanvasSurface::after {
+  inset-block-end: 12px;
+  inset-inline-end: 14px;
+  transform: rotate(152deg);
+}
+
+.writingCanvasSurface[data-success="sprout"] {
+  box-shadow: inset 0 0 0 5px rgb(255 255 255 / 35%), 0 5px 0 #dcbf7a, 0 0 0 5px rgb(132 185 116 / 35%);
+}
+
+.writingCanvas {
+  position: relative;
+  z-index: 2;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  min-inline-size: 64px;
+  min-block-size: 64px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.writingCanvas[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.72;
+}
