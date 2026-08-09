@@ -34,4 +34,10 @@ describe("GardenScreen", () => {
     await user.click(screen.getByRole("button", { name: "イラストを もういちど よみこむ" }));
     expect(screen.getByRole("button", { name: "あ を もういちど" })).toHaveTextContent("あ");
   });
+
+  it("46文字完了後だけ、ことばのにわへの明確な入口を表示する", () => {
+    render(<GardenScreen progress={createInitialProgress()} resumeRoute={{ kind: "wordGarden" }} onContinue={vi.fn()} onReview={vi.fn()} onOpenParent={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "ことばの にわへ" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "つづきを あそぶ" })).not.toBeInTheDocument();
+  });
 });

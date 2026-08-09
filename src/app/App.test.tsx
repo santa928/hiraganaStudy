@@ -9,6 +9,7 @@ import type { LearningProgress } from "../features/learning/model/types";
 import type { ProgressRepository } from "../platform/storage/ProgressRepository";
 import type { AudioGuide } from "../platform/audio/AudioGuide";
 import { progressWithCompletedCount } from "../test/fixtures/progress";
+import { renderApp } from "../test/renderApp";
 
 function createRuntime(load: () => Promise<LearningProgress>): { readonly runtime: GameRuntime; readonly save: ReturnType<typeof vi.fn> } {
   const save = vi.fn<ProgressRepository["save"]>().mockResolvedValue(undefined);
@@ -19,6 +20,21 @@ function createRuntime(load: () => Promise<LearningProgress>): { readonly runtim
 }
 
 describe("App", () => {
+  it("45文字完了時はhelper経由でwordGardenを直接要求しても文字の庭に留まる", async () => {
+    const incomplete = progressWithCompletedCount(45);
+    const progress = { ...incomplete, kana: Object.fromEntries(Object.entries(incomplete.kana).map(([character, value]) => [character, { ...value, seen: true }])) as LearningProgress["kana"] };
+    renderApp({ progress, requestedRoute: "wordGarden" });
+    expect(await screen.findByTestId("garden-screen")).toBeVisible();
+    expect(screen.queryByTestId("word-garden")).not.toBeInTheDocument();
+  });
+  it("46文字完了時だけhelper経由のwordGarden直接要求を受け入れる", async () => {
+    const complete = progressWithCompletedCount(46);
+    const progress = { ...complete, kana: Object.fromEntries(Object.entries(complete.kana).map(([character, value]) => [character, { ...value, seen: true }])) as LearningProgress["kana"] };
+
+    renderApp({ progress, requestedRoute: "wordGarden" });
+
+    expect(await screen.findByTestId("word-garden")).toBeVisible();
+  });
   it("45文字完了の保存ではことばのにわへ遷移せず、46文字完了の庭CTAはことばのにわを開く", async () => {
     const incomplete = progressWithCompletedCount(45);
     const complete = progressWithCompletedCount(46);
@@ -35,8 +51,27 @@ describe("App", () => {
     const second = createRuntime(() => Promise.resolve(startedComplete));
     render(<App runtime={second.runtime} />);
     expect(await screen.findByTestId("garden-screen")).toBeVisible();
-    await userEvent.setup().click(screen.getByRole("button", { name: "つづきを あそぶ" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "ことばの にわへ" }));
     expect(await screen.findByTestId("word-garden")).toBeVisible();
+  });
+  it("ことばのにわへの案内は音声ON時だけ一度読み上げ、もじのにわへ戻れる", async () => {
+    const complete = progressWithCompletedCount(46);
+    const progress = {
+      ...complete,
+      kana: Object.fromEntries(Object.entries(complete.kana).map(([character, value]) => [character, { ...value, seen: true }])) as LearningProgress["kana"],
+      settings: { ...complete.settings, speech: true },
+    };
+    const { runtime } = createRuntime(() => Promise.resolve(progress));
+    const audio: AudioGuide = { cancel: vi.fn(), getStatus: () => "visual-only", unlock: vi.fn().mockResolvedValue("visual-only"), speak: vi.fn().mockResolvedValue(undefined) };
+    render(<App runtime={runtime} audio={audio} />);
+
+    await userEvent.setup().click(await screen.findByRole("button", { name: "ことばの にわへ" }));
+    expect(await screen.findByTestId("word-garden")).toBeVisible();
+    expect(audio.speak).toHaveBeenCalledWith("ことばの にわへ いってみよう", { interrupt: true });
+    vi.mocked(audio.cancel).mockClear();
+    await userEvent.setup().click(screen.getByRole("button", { name: "もじの にわへ" }));
+    expect(await screen.findByTestId("garden-screen")).toBeVisible();
+    expect(audio.cancel).toHaveBeenCalledOnce();
   });
   it("production音声の開始・終了を効果音duckingへ伝える", () => {
     const setSpeechActive = vi.fn();

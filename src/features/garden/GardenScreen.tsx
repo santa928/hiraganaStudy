@@ -29,6 +29,7 @@ export function GardenScreen({ progress, resumeRoute, onContinue, onReview, onOp
   const background = getWorldIllustration("garden-background");
   const wateringCan = getWorldIllustration("watering-can");
   const count = completedCount(progress);
+  const isWordGardenRoute = resumeRoute.kind === "wordGarden";
 
   useEffect(() => {
     // GardenScreen単体でも、画面状態をDOMから確認できるようにする。
@@ -52,9 +53,9 @@ export function GardenScreen({ progress, resumeRoute, onContinue, onReview, onOp
         ))}
       </section>
       <footer className="gardenScreen__continue" data-layout="garden-continue">
-        <button className="gardenScreen__watering" type="button" aria-label="つづきを あそぶ" onClick={onContinue}>
+        <button className="gardenScreen__watering" type="button" aria-label={isWordGardenRoute ? "ことばの にわへ" : "つづきを あそぶ"} onClick={onContinue}>
           <img src={wateringCan.src} alt="" width={wateringCan.width} height={wateringCan.height} />
-          <span>つづきを あそぶ</span>
+          <span>{isWordGardenRoute ? "ことばの にわへ" : "つづきを あそぶ"}</span>
         </button>
       </footer>
     </main>

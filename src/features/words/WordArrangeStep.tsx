@@ -5,6 +5,7 @@ export interface WordArrangeStepProps {
   readonly word: string;
   readonly onComplete: () => void;
   readonly onGuide?: () => void;
+  readonly reducedMotion?: boolean;
 }
 
 interface CharacterTile { readonly id: string; readonly character: string; }
@@ -19,14 +20,16 @@ function createTiles(word: string): readonly CharacterTile[] {
 }
 
 /** 指定順を一文字ずつ完成する、穏やかな単語タイル面。 */
-export function WordArrangeStep({ word, onComplete, onGuide }: WordArrangeStepProps): React.JSX.Element {
+export function WordArrangeStep({ word, onComplete, onGuide, reducedMotion = false }: WordArrangeStepProps): React.JSX.Element {
   const tiles = useMemo(() => createTiles(word), [word]);
   const [placed, setPlaced] = useState<readonly CharacterTile[]>([]);
   const [available, setAvailable] = useState(tiles);
+  const [guideKey, setGuideKey] = useState(0);
   const nextCharacter = [...word][placed.length];
 
   const pick = (tile: CharacterTile): void => {
     if (tile.character !== nextCharacter) {
+      setGuideKey((current) => current + 1);
       onGuide?.();
       return;
     }
@@ -36,10 +39,10 @@ export function WordArrangeStep({ word, onComplete, onGuide }: WordArrangeStepPr
     if (nextPlaced.length === tiles.length) onComplete();
   };
 
-  return <section className="wordLesson__arrange" data-testid="word-arrange">
+  return <section className="wordLesson__arrange" data-testid="word-arrange" data-reduced-motion={reducedMotion || undefined}>
     <p>もじを ならべよう</p>
-    <div className="wordLesson__placed" aria-label="ならべた ことば">{placed.map((tile) => <span key={tile.id}>{tile.character}</span>)}</div>
-    <div className="wordLesson__tiles" aria-label="もじの タイル">
+    <div className="wordLesson__placed" key={guideKey} aria-label="ならべた ことば" data-guide={guideKey || undefined}>{placed.map((tile) => <span key={tile.id}>{tile.character}</span>)}</div>
+    <div className="wordLesson__tiles" data-layout="word-tiles" aria-label="もじの タイル">
       {available.map((tile) => <button className="wordLesson__tile" type="button" key={tile.id} aria-label={tile.character} data-tile-id={tile.id} onClick={() => pick(tile)}>{tile.character}</button>)}
     </div>
   </section>;

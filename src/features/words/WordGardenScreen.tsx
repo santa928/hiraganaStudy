@@ -8,6 +8,7 @@ export interface WordGardenScreenProps {
   readonly progress: LearningProgress;
   readonly onStart: (wordId: string) => void;
   readonly onReview: (wordId: string) => void;
+  readonly onBackToGarden: () => void;
 }
 
 const STAGES: readonly WordStage[] = ["W1", "W2", "W3", "W4", "W5"];
@@ -31,12 +32,12 @@ export function findNextWordId(progress: LearningProgress): string | null {
 }
 
 /** 5段階のことばの花壇。数値スコアではなく、育った語だけを復習口にする。 */
-export function WordGardenScreen({ progress, onStart, onReview }: WordGardenScreenProps): React.JSX.Element {
+export function WordGardenScreen({ progress, onStart, onReview, onBackToGarden }: WordGardenScreenProps): React.JSX.Element {
   const nextWordId = findNextWordId(progress);
   const nextWord = WORD_ENTRIES.find((word) => word.id === nextWordId);
 
   return <main className="wordGarden" data-testid="word-garden">
-    <header className="wordGarden__header"><p>ことばの にわ</p><span aria-label="ことばの はなだん">ことばの はなだん</span></header>
+    <header className="wordGarden__header"><p>ことばの にわ</p><button className="wordGarden__back" type="button" onClick={onBackToGarden}>もじの にわへ</button></header>
     <section className="wordGarden__beds" aria-label="5つの ことばの はなだん">
       {STAGES.map((stage) => <section className="wordGarden__bed" key={stage} data-current={nextWord?.stage === stage || undefined}>
         <h2>{STAGE_LABELS[stage]}</h2>

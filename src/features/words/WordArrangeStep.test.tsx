@@ -22,4 +22,21 @@ describe("WordArrangeStep", () => {
     await user.click(screen.getByRole("button", { name: "て" }));
     expect(onComplete).toHaveBeenCalledOnce();
   });
+
+  it("最長の7文字語でもタイル全件を操作対象として描画する", () => {
+    render(<WordArrangeStep word="しょうぼうしゃ" onComplete={vi.fn()} />);
+
+    expect(screen.getByTestId("word-arrange").querySelector("[data-layout='word-tiles']")).toHaveAttribute("data-layout", "word-tiles");
+    expect(screen.getAllByRole("button", { name: /^(し|ょ|う|ぼ|ゃ)$/ })).toHaveLength(7);
+  });
+
+  it("誤タイルでは進まず、次の置き場に穏やかな案内状態を出す", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    render(<WordArrangeStep word="いえ" onComplete={onComplete} />);
+
+    await user.click(screen.getByRole("button", { name: "え" }));
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("ならべた ことば")).toHaveAttribute("data-guide", "1");
+  });
 });

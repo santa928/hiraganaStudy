@@ -12,12 +12,22 @@ describe("WordGardenScreen", () => {
     const progress = { ...initial, words: { ...initial.words, "w1-01": { selected: true, arranged: true, writingTried: true } } };
     const onStart = vi.fn();
     const onReview = vi.fn();
-    render(<WordGardenScreen progress={progress} onStart={onStart} onReview={onReview} />);
+    render(<WordGardenScreen progress={progress} onStart={onStart} onReview={onReview} onBackToGarden={vi.fn()} />);
 
     expect(findNextWordId(progress)).toBe("w1-02");
     await user.click(screen.getByRole("button", { name: "いえ" }));
     expect(onReview).toHaveBeenCalledWith("w1-01");
     await user.click(screen.getByRole("button", { name: "ことばを そだてよう" }));
     expect(onStart).toHaveBeenCalledWith("w1-02");
+  });
+
+  it("もじのにわへ戻る補助操作を48px以上で提供する", async () => {
+    const user = userEvent.setup();
+    const onBackToGarden = vi.fn();
+    render(<WordGardenScreen progress={createInitialProgress()} onStart={vi.fn()} onReview={vi.fn()} onBackToGarden={onBackToGarden} />);
+
+    const back = screen.getByRole("button", { name: "もじの にわへ" });
+    await user.click(back);
+    expect(onBackToGarden).toHaveBeenCalledOnce();
   });
 });
