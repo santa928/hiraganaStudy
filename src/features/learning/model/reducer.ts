@@ -91,12 +91,15 @@ function isResumableProgress(progress: unknown): progress is LearningProgress {
     || currentKanaIndex >= KANA_ORDER.length
     || typeof stage !== "string"
     || !LESSON_STAGES.has(stage as LessonStage)
-    || !isValidRowReview(candidate.rowReview)
     || typeof kana !== "object"
     || kana === null
   ) {
     return false;
   }
+
+  const currentKana = KANA_ORDER[currentKanaIndex];
+
+  if (!currentKana || !isValidRowReview(candidate.rowReview, currentKana, stage as LessonStage)) return false;
 
   const kanaRecord = kana as Record<string, unknown>;
 
@@ -105,8 +108,8 @@ function isResumableProgress(progress: unknown): progress is LearningProgress {
   ));
 }
 
-/** 行復習が未実施か、既知の行と段階を持つかを検査する。 */
-function isValidRowReview(rowReview: unknown): boolean {
+/** 行復習が未実施か、現在の行末文字・行・段階に整合するかを検査する。 */
+function isValidRowReview(rowReview: unknown, currentKana: KanaCharacter, stage: LessonStage): boolean {
   if (rowReview === null) return true;
   if (typeof rowReview !== "object") return false;
 
@@ -115,7 +118,9 @@ function isValidRowReview(rowReview: unknown): boolean {
   return (
     typeof candidate.row === "string"
     && KANA_ROWS.has(candidate.row as KanaEntry["row"])
-    && (candidate.step === "shape" || candidate.step === "sound")
+    && ROW_ENDINGS.has(currentKana)
+    && candidate.row === getKanaRow(currentKana)
+    && ((candidate.step === "shape" && stage === "shapeMatch") || (candidate.step === "sound" && stage === "soundMatch"))
   );
 }
 

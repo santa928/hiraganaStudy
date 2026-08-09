@@ -165,6 +165,36 @@ describe("学習状態機械", () => {
   });
 
   it.each([
+    ["shape復習とsoundMatchの不一致", { ...progressAt("お", "soundMatch"), rowReview: { row: "a", step: "shape" } }],
+    ["sound復習とshapeMatchの不一致", { ...progressAt("お", "shapeMatch"), rowReview: { row: "a", step: "sound" } }],
+    ["現在文字と異なる行名", { ...progressAt("お", "shapeMatch"), rowReview: { row: "ka", step: "shape" } }],
+    ["非行末文字の行復習", { ...progressAt("あ", "shapeMatch"), rowReview: { row: "a", step: "shape" } }],
+  ] as const)("RESUMEは%sを初期進捗へフォールバックする", (_description, invalidProgress) => {
+    const result = reduceLesson(
+      stateAt("あ", "intro"),
+      { type: "RESUME", progress: invalidProgress as unknown as ReturnType<typeof createInitialProgress> },
+    );
+
+    expect(result).toEqual({
+      progress: createInitialProgress(),
+      currentKana: "あ",
+      stage: "intro",
+    });
+  });
+
+  it("RESUMEは現在の行末文字と段階に整合する行復習を保持する", () => {
+    const saved = {
+      ...progressAt("お", "shapeMatch"),
+      rowReview: { row: "a", step: "shape" } as const,
+    };
+    const result = reduceLesson(stateAt("あ", "intro"), { type: "RESUME", progress: saved });
+
+    expect(result.currentKana).toBe("お");
+    expect(result.stage).toBe("shapeMatch");
+    expect(result.progress).toEqual(saved);
+  });
+
+  it.each([
     ["非整数の文字index", { ...progressAt("く", "traceNarrow"), currentKanaIndex: 7.5 }],
     ["範囲外の文字index", { ...progressAt("く", "traceNarrow"), currentKanaIndex: 46 }],
     ["不完全なkana record", { ...progressAt("く", "traceNarrow"), kana: { あ: progressAt("く", "traceNarrow").kana["あ"] } }],
