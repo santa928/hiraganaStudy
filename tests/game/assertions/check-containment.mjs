@@ -1,4 +1,4 @@
-/* global console, document, getComputedStyle, HTMLCanvasElement, HTMLElement, innerHeight, innerWidth, localStorage, performance, process */
+/* global console, document, getComputedStyle, HTMLCanvasElement, HTMLElement, innerHeight, innerWidth, localStorage, performance, process, window */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -32,6 +32,14 @@ function longestRunOver(values, threshold) {
   return longest;
 }
 
+/** child矩形がparent矩形から出ているかを小数誤差込みで判定する。 */
+function isOutside(child, parent, tolerance) {
+  return child.left < parent.left - tolerance
+    || child.top < parent.top - tolerance
+    || child.right > parent.right + tolerance
+    || child.bottom > parent.bottom + tolerance;
+}
+
 /** 書字開始後のpaintだけを抽出し、idle時間を遅延へ混ぜずに集計する。 */
 export function analyzeWritingSamples(raw) {
   const firstPointerTime = raw.pointerTimes[0] ?? Number.POSITIVE_INFINITY;
@@ -39,13 +47,18 @@ export function analyzeWritingSamples(raw) {
     .filter((time, index, values) => index === 0 || time - values[index - 1] > 2)
     .filter((time) => time >= firstPointerTime);
   const frameIntervals = uniquePaintTimes.slice(1).map((time, index) => time - uniquePaintTimes[index]);
-  const pointerToPaint = raw.pointerTimes.map((pointerTime) => {
+  const pointerPaintPairs = raw.pointerTimes.map((pointerTime) => {
     const paintTime = uniquePaintTimes.find((time) => time >= pointerTime);
-    return paintTime === undefined ? null : paintTime - pointerTime;
-  }).filter((value) => value !== null);
+    return { pointerTime, paintTime };
+  });
+  const pointerToPaint = pointerPaintPairs
+    .filter((pair) => pair.paintTime !== undefined)
+    .map((pair) => pair.paintTime - pair.pointerTime);
+  const unpaintedPointerEvents = pointerPaintPairs.filter((pair) => pair.paintTime === undefined).length;
   return {
     pointerEvents: raw.pointerTimes.length,
     paintFrames: uniquePaintTimes.length,
+    unpaintedPointerEvents,
     frameIntervalsMs: frameIntervals.map(rounded),
     pointerToPaintMs: pointerToPaint.map(rounded),
     maxFrameIntervalMs: rounded(Math.max(0, ...frameIntervals)),
@@ -60,22 +73,28 @@ export function analyzeWritingSamples(raw) {
 export function findContainmentIssues(metrics) {
   const issues = [];
   const tolerance = 0.5;
+  if (metrics.root.left < -tolerance) issues.push(`root左端overflow: ${rounded(metrics.root.left)} < 0`);
+  if (metrics.root.top < -tolerance) issues.push(`root上端overflow: ${rounded(metrics.root.top)} < 0`);
   if (metrics.root.right > metrics.viewport.width + tolerance) issues.push(`root右端overflow: ${rounded(metrics.root.right)} > ${metrics.viewport.width}`);
   if (metrics.root.bottom > metrics.viewport.height + tolerance) issues.push(`root下端overflow: ${rounded(metrics.root.bottom)} > ${metrics.viewport.height}`);
   for (const child of metrics.children) {
-    if (
-      child.rect.left < metrics.card.left - tolerance
-      || child.rect.top < metrics.card.top - tolerance
-      || child.rect.right > metrics.card.right + tolerance
-      || child.rect.bottom > metrics.card.bottom + tolerance
-    ) issues.push(`card内overflow: ${child.name}`);
+    if (isOutside(child.rect, metrics.card, tolerance)) issues.push(`card内overflow: ${child.name}`);
+  }
+  const viewportRect = { left: 0, top: 0, right: metrics.viewport.width, bottom: metrics.viewport.height };
+  for (const region of metrics.regions ?? []) {
+    if (isOutside(region.rect, region.parentRect, tolerance)) issues.push(`layout親境界外: ${region.name}`);
+    if (isOutside(region.rect, viewportRect, tolerance)) issues.push(`layout viewport外: ${region.name}`);
   }
   const gap = metrics.materialTop - metrics.hudBottom;
   if (gap < 8 - tolerance) issues.push(`HUDと教材のgap不足: ${rounded(gap)}px`);
   for (const target of metrics.targets) {
-    if (target.rect.width < 48 - tolerance || target.rect.height < 48 - tolerance) {
-      issues.push(`touch target不足: ${target.name} ${rounded(target.rect.width)}x${rounded(target.rect.height)}`);
+    const minimumSize = target.primary ? 64 : 48;
+    if (target.rect.width < minimumSize - tolerance || target.rect.height < minimumSize - tolerance) {
+      const requirement = target.primary ? " (64px必要)" : "";
+      issues.push(`touch target不足: ${target.name} ${rounded(target.rect.width)}x${rounded(target.rect.height)}${requirement}`);
     }
+    if (isOutside(target.rect, target.parentRect ?? metrics.root, tolerance)) issues.push(`touch target親境界外: ${target.name}`);
+    if (isOutside(target.rect, viewportRect, tolerance)) issues.push(`touch target viewport外: ${target.name}`);
   }
   return issues;
 }
@@ -154,10 +173,21 @@ async function measureViewport(browser, options, viewport, errors) {
     }).map((element) => ({
       name: element.getAttribute("aria-label") ?? element.textContent?.trim() ?? element.className,
       rect: toRect(element),
+      parentRect: toRect(element.parentElement ?? root),
+      primary: element.matches(".choiceGrid__choice, .lessonButton:not(.lessonButton--secondary)"),
     }));
+    const rootRect = toRect(root);
+    const bodyRect = toRect(body);
+    const regions = [
+      { name: "hud", rect: toRect(hud), parentRect: rootRect },
+      { name: "guide", rect: toRect(guide), parentRect: rootRect },
+      { name: "body", rect: bodyRect, parentRect: rootRect },
+      { name: "material", rect: toRect(material), parentRect: bodyRect },
+      { name: "actions", rect: toRect(actions), parentRect: bodyRect },
+    ];
     return {
       viewport: { width: innerWidth, height: innerHeight },
-      root: toRect(root),
+      root: rootRect,
       hud: toRect(hud),
       guide: toRect(guide),
       body: toRect(body),
@@ -167,6 +197,7 @@ async function measureViewport(browser, options, viewport, errors) {
       character: toRect(character),
       illustration: toRect(illustration),
       children,
+      regions,
       targets,
       hudBottom: hud.getBoundingClientRect().bottom,
       materialTop: guide.getBoundingClientRect().top,
@@ -213,6 +244,8 @@ async function measureWritingPerformance(browser, options, errors) {
     if (!context2d) throw new Error("CanvasRenderingContext2Dがありません");
     const samples = { pointerTimes: [], paintTimes: [] };
     let pointerActive = false;
+    let strokeRevision = 0;
+    let paintedPointerCount = 0;
     globalThis.__writingAuditSamples = samples;
     target.addEventListener("pointerdown", () => { pointerActive = true; }, { capture: true });
     target.addEventListener("pointerup", () => { pointerActive = false; }, { capture: true });
@@ -222,9 +255,18 @@ async function measureWritingPerformance(browser, options, errors) {
     }, { capture: true });
     const originalStroke = context2d.stroke.bind(context2d);
     context2d.stroke = (...args) => {
-      if (pointerActive) samples.paintTimes.push(performance.now());
+      strokeRevision += 1;
       return originalStroke(...args);
     };
+    const originalRequestAnimationFrame = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) => originalRequestAnimationFrame((timestamp) => {
+      const revisionBeforeFrame = strokeRevision;
+      callback(timestamp);
+      if (strokeRevision > revisionBeforeFrame && paintedPointerCount < samples.pointerTimes.length) {
+        samples.paintTimes.push(performance.now());
+        paintedPointerCount = samples.pointerTimes.length;
+      }
+    });
   });
   const box = await canvas.boundingBox();
   if (!box) throw new Error("書字canvasの境界を取得できません");
@@ -237,6 +279,7 @@ async function measureWritingPerformance(browser, options, errors) {
   const metrics = analyzeWritingSamples(raw);
   const issues = [];
   if (metrics.pointerEvents === 0 || metrics.paintFrames < 2) issues.push("書字performance sample不足");
+  if (metrics.unpaintedPointerEvents > 0) issues.push(`描画frame未対応pointer: ${metrics.unpaintedPointerEvents}`);
   if (metrics.consecutiveFrameIntervalsOver38Ms >= 3) issues.push(`30fps paint遅延が3回以上継続: ${metrics.consecutiveFrameIntervalsOver38Ms}`);
   if (metrics.consecutivePointerLatencyOver50Ms >= 3) issues.push(`pointer-to-paint 50ms超が3回以上継続: ${metrics.consecutivePointerLatencyOver50Ms}`);
   await page.screenshot({ path: join(options.outputDirectory, "writing-performance.png"), fullPage: false });
@@ -270,7 +313,7 @@ export async function checkContainment(options) {
     ...browserErrors,
   ];
   if (issues.length > 0) throw new Error(`Containment verification failed:\n${issues.map((issue) => `- ${issue}`).join("\n")}`);
-  console.info("Containment verification passed: 4 viewports, decoded images, 48px targets, writing paint samples, browser errors 0.");
+  console.info("Containment verification passed: 4 viewports, decoded images, 64px primary/48px secondary targets, writing paint samples, browser errors 0.");
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";

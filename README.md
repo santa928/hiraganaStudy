@@ -53,7 +53,7 @@ docker compose run --rm app npm run verify:images
 docker compose run --rm app npm run build:pages
 ```
 
-完成導線と4代表viewportをproduction buildで再確認する場合は、一時previewを起動したまま別terminalでPlaywright検証を実行します。Playwright containerはpreviewと同じnetworkへ入り、Service Workerや古いcacheを持ち越さない独立contextを使います。
+完成導線と4代表viewportをproduction buildで再確認する場合は、一時previewを起動したまま別terminalでPlaywright検証を実行します。`npm ci` が固定するPlaywright 1.62.0と同じ公式imageには対応browserとOS依存が収録されているため、空のbrowser volumeやホスト側installには依存しません。Playwright containerはpreviewと同じnetworkへ入り、Service Workerや古いcacheを持ち越さない独立contextを使います。
 
 ```bash
 docker compose run --rm -e BASE_PATH=/ app npm run build
@@ -62,19 +62,17 @@ docker compose run --rm --name hiragana-final-preview -p 4176:4173 -e BASE_PATH=
 docker run --rm --network container:hiragana-final-preview \
   -v "$PWD:/workspace" \
   -v hiraganastudy_node_modules:/workspace/node_modules:ro \
-  -v hiraganastudy_playwright_browsers:/ms-playwright:ro \
   -w /workspace -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-  mcr.microsoft.com/playwright:v1.60.0-noble npm run verify:game
+  mcr.microsoft.com/playwright:v1.62.0-noble npm run verify:game
 
 docker run --rm --network container:hiragana-final-preview \
   -v "$PWD:/workspace" \
   -v hiraganastudy_node_modules:/workspace/node_modules:ro \
-  -v hiraganastudy_playwright_browsers:/ms-playwright:ro \
   -w /workspace -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-  mcr.microsoft.com/playwright:v1.60.0-noble npm run verify:layout
+  mcr.microsoft.com/playwright:v1.62.0-noble npm run verify:layout
 ```
 
-結果は `test-results/game/` に保存されます。`verify:game` は初回「あ」・4書字段階・45/46文字境界を、`verify:layout` は390×844、844×390、820×1180、1180×820の境界・48px操作領域・画像読込・書字paintを確認します。Docker内の性能値は実機性能認証ではなく、継続的な大幅遅延がないかを見る参考値です。
+結果は `test-results/game/` に保存されます。`verify:game` は初回「あ」・4書字段階・45/46文字境界を、`verify:layout` は390×844、844×390、820×1180、1180×820の境界・主要64px／補助48px操作領域・画像読込・書字paintを確認します。Docker内の性能値は実機性能認証ではなく、継続的な大幅遅延がないかを見る参考値です。
 
 PWA iconを基準画像から再生成する場合:
 

@@ -1,5 +1,6 @@
 /* global process */
 
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -59,5 +60,55 @@ describe("完成版browser監査の固定scenario", () => {
     expect(metrics.frameIntervalsMs).toEqual([20, 20]);
     expect(metrics.maxPointerToPaintMs).toBe(15);
     expect(metrics.consecutiveFrameIntervalsOver38Ms).toBe(0);
+  });
+
+  it("主要選択肢の64px不足と親・viewport外配置を同時に拒否する", () => {
+    const root = { left: 0, top: 0, right: 390, bottom: 844, width: 390, height: 844 };
+    const issues = findContainmentIssues({
+      viewport: { width: 390, height: 844 },
+      root,
+      card: { left: 10, top: 100, right: 380, bottom: 700, width: 370, height: 600 },
+      children: [],
+      regions: [{
+        name: "actions",
+        rect: { left: 380, top: 90, right: 430, bottom: 200, width: 50, height: 110 },
+        parentRect: root,
+      }],
+      hudBottom: 80,
+      materialTop: 100,
+      targets: [{
+        name: "choice-outside",
+        primary: true,
+        rect: { left: 400, top: 100, right: 450, bottom: 150, width: 50, height: 50 },
+        parentRect: root,
+      }],
+    });
+
+    expect(issues).toContain("touch target不足: choice-outside 50x50 (64px必要)");
+    expect(issues).toContain("touch target親境界外: choice-outside");
+    expect(issues).toContain("touch target viewport外: choice-outside");
+    expect(issues).toContain("layout親境界外: actions");
+    expect(issues).toContain("layout viewport外: actions");
+  });
+
+  it("次の描画frameへ対応しなかったpointerを欠落として数える", () => {
+    const metrics = analyzeWritingSamples({
+      pointerTimes: [100, 110, 120],
+      paintTimes: [105],
+    });
+
+    expect(metrics.unpaintedPointerEvents).toBe(2);
+  });
+
+  it("READMEの公式Playwright imageをlockfileと同じ版にして空volumeへ依存しない", async () => {
+    const [readme, lockSource] = await Promise.all([
+      readFile(resolve(REPOSITORY_ROOT, "README.md"), "utf8"),
+      readFile(resolve(REPOSITORY_ROOT, "package-lock.json"), "utf8"),
+    ]);
+    const lock = JSON.parse(lockSource);
+    const playwrightVersion = lock.packages["node_modules/playwright"].version;
+
+    expect(readme).toContain(`mcr.microsoft.com/playwright:v${playwrightVersion}-noble`);
+    expect(readme).not.toContain("hiraganastudy_playwright_browsers:/ms-playwright:ro");
   });
 });

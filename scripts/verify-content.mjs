@@ -18,6 +18,18 @@ export const EXPECTED_WORDS_BY_STAGE = {
 
 const EXPECTED_ADVANCED_WRITING = [..."がぎござぞだでどばぶべぼぱぴぷぽっゃゅょ"];
 const EXPECTED_WRITING_CHARACTERS = [...EXPECTED_KANA_ORDER, ...EXPECTED_ADVANCED_WRITING];
+const EXPECTED_KANA_ILLUSTRATION_KEYS = [
+  "kana-a-duck", "kana-i-dog", "kana-u-rabbit", "kana-e-pencil", "kana-o-rice-ball",
+  "kana-ka-umbrella", "kana-ki-giraffe", "kana-ku-car", "kana-ke-yarn", "kana-ko-koala",
+  "kana-sa-fish", "kana-shi-zebra", "kana-su-watermelon", "kana-se-cicada", "kana-so-sky",
+  "kana-ta-drum", "kana-chi-butterfly", "kana-tsu-blocks", "kana-te-gloves", "kana-to-tomato",
+  "kana-na-eggplant", "kana-ni-carrot", "kana-nu-stuffed-toy", "kana-ne-cat", "kana-no-vehicles",
+  "kana-ha-flower", "kana-hi-chick", "kana-fu-balloon", "kana-he-snake", "kana-ho-star",
+  "kana-ma-pillow", "kana-mi-mandarin", "kana-mu-insect", "kana-me-glasses", "kana-mo-peach",
+  "kana-ya-mountain", "kana-yu-snowman", "kana-yo-yacht", "kana-ra-lion", "kana-ri-apple",
+  "kana-ru-roulette", "kana-re-lemon", "kana-ro-candle", "kana-wa-crocodile", "kana-wo-apple-eating",
+  "kana-n-bread-ending",
+];
 const EXPECTED_WORLD_KEYS = ["garden-background", "voice-bird", "watering-can"];
 const EXPECTED_SFX_PATHS = ["garden-loop.wav", "sprout.wav", "success.wav", "tap.wav"]
   .map((fileName) => `public/assets/sfx/${fileName}`);
@@ -168,6 +180,12 @@ export function findContentIssues(inventory) {
   const kanaCharacters = inventory.kanaEntries.map((entry) => entry.character);
   compareOrdered("ひらがな順", kanaCharacters, EXPECTED_KANA_ORDER, issues);
   reportDuplicates("ひらがな", kanaCharacters, issues);
+  for (const [index, expectedKey] of EXPECTED_KANA_ILLUSTRATION_KEYS.entries()) {
+    const entry = inventory.kanaEntries[index];
+    if (entry?.illustrationKey !== expectedKey) {
+      issues.push(`ひらがなillustration対応不一致: ${EXPECTED_KANA_ORDER[index]}:${entry?.illustrationKey ?? ""}`);
+    }
+  }
 
   const words = [];
   for (const [stage, expectedWords] of Object.entries(EXPECTED_WORDS_BY_STAGE)) {
@@ -180,6 +198,14 @@ export function findContentIssues(inventory) {
 
   const catalogByKey = new Map(inventory.catalogEntries.map((entry) => [entry.key, entry]));
   reportDuplicates("illustration定義", inventory.catalogEntries.map((entry) => entry.key), issues);
+  const expectedCatalogKeys = new Set([
+    ...EXPECTED_KANA_ILLUSTRATION_KEYS,
+    ...EXPECTED_WORLD_KEYS,
+  ]);
+  if (inventory.catalogEntries.length !== 49) issues.push(`illustration定義数不一致: ${inventory.catalogEntries.length}/49`);
+  for (const entry of inventory.catalogEntries) {
+    if (!expectedCatalogKeys.has(entry.key)) issues.push(`illustration定義対象外: ${entry.key}`);
+  }
   for (const entry of inventory.kanaEntries) {
     const asset = catalogByKey.get(entry.illustrationKey);
     if (!asset) {
@@ -202,8 +228,13 @@ export function findContentIssues(inventory) {
       text,
     }))
   ));
+  const expectedWordIdSet = new Set(expectedWordIds.map((entry) => entry.id));
   const wordAssetByKey = new Map(inventory.wordAssetEntries.map((entry) => [entry.key, entry]));
   reportDuplicates("単語illustration定義", inventory.wordAssetEntries.map((entry) => entry.key), issues);
+  if (inventory.wordAssetEntries.length !== 60) issues.push(`単語illustration定義数不一致: ${inventory.wordAssetEntries.length}/60`);
+  for (const entry of inventory.wordAssetEntries) {
+    if (!expectedWordIdSet.has(entry.key)) issues.push(`単語illustration定義対象外: ${entry.key}`);
+  }
   for (const expected of expectedWordIds) {
     const asset = wordAssetByKey.get(expected.id);
     if (!asset) {
@@ -223,15 +254,16 @@ export function findContentIssues(inventory) {
   }
 
   const expectedImageFiles = new Set([
-    ...inventory.catalogEntries.filter((entry) => entry.key.startsWith("kana-") && entry.fileName)
+    ...inventory.catalogEntries.filter((entry) => expectedCatalogKeys.has(entry.key) && !EXPECTED_WORLD_KEYS.includes(entry.key) && entry.fileName)
       .map((entry) => `public/assets/illustrations/kana/${entry.fileName}`),
     ...inventory.catalogEntries.filter((entry) => EXPECTED_WORLD_KEYS.includes(entry.key) && entry.fileName)
       .map((entry) => `public/assets/illustrations/world/${entry.fileName}`),
-    ...inventory.wordAssetEntries.filter((entry) => entry.kind === "word" && entry.fileName)
+    ...inventory.wordAssetEntries.filter((entry) => expectedWordIdSet.has(entry.key) && entry.kind === "word" && entry.fileName)
       .map((entry) => `public/assets/illustrations/words/${entry.fileName}`),
   ]);
   const actualImageFiles = new Set([...inventory.existingFiles].filter((path) => path.startsWith("public/assets/illustrations/") && path.endsWith(".webp")));
   compareFiles(actualImageFiles, expectedImageFiles, "公開asset欠落", "未定義illustration asset", issues);
+  if (actualImageFiles.size !== 94) issues.push(`illustration asset数不一致: ${actualImageFiles.size}/94`);
 
   const strokeByCharacter = new Map(inventory.strokeTemplates.map((entry) => [entry.character, entry]));
   reportDuplicates("書字template", inventory.strokeTemplates.map((entry) => entry.character), issues);

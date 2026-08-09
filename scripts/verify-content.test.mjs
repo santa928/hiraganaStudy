@@ -39,4 +39,30 @@ describe("完成教材content verifier", () => {
     expect(issues).toContain("効果音欠落: public/assets/sfx/success.wav");
     expect(issues).toContain("第三者license欠落: public/licenses/fude-kana-data/LICENSE");
   });
+
+  it("catalogと物理画像を同時に増やしても固定94枚として拒否する", async () => {
+    const inventory = await collectContentInventory(REPOSITORY_ROOT);
+    const extraPath = "public/assets/illustrations/kana/kana-extra.webp";
+    const expanded = {
+      ...inventory,
+      catalogEntries: [
+        ...inventory.catalogEntries,
+        {
+          key: "kana-extra",
+          text: null,
+          alt: "よぶんな え",
+          kind: null,
+          fileName: "kana-extra.webp",
+          sourceKey: null,
+        },
+      ],
+      existingFiles: new Set([...inventory.existingFiles, extraPath]),
+    };
+
+    const issues = findContentIssues(expanded);
+
+    expect(issues).toContain("illustration定義対象外: kana-extra");
+    expect(issues).toContain(`未定義illustration asset: ${extraPath}`);
+    expect(issues).toContain("illustration asset数不一致: 95/94");
+  });
 });
