@@ -11,6 +11,7 @@
     { "action": "expectState", "screen": "lesson", "stage": "traceWide", "kana": "あ" },
     { "action": "capture", "name": "trace-wide" },
     { "action": "drawAndContinue" },
+    { "action": "expectSuccess", "capture": "writing-success" },
     { "action": "expectState", "screen": "lesson", "stage": "traceNarrow", "kana": "あ" },
     { "action": "drawAndContinue" },
     { "action": "expectState", "screen": "lesson", "stage": "copyWithModel", "kana": "あ" },

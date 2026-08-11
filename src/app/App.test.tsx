@@ -20,6 +20,10 @@ function createRuntime(load: () => Promise<LearningProgress>): { readonly runtim
 }
 
 describe("App", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("45文字完了時はhelper経由でwordGardenを直接要求しても文字の庭に留まる", async () => {
     const incomplete = progressWithCompletedCount(45);
     const progress = { ...incomplete, kana: Object.fromEntries(Object.entries(incomplete.kana).map(([character, value]) => [character, { ...value, seen: true }])) as LearningProgress["kana"] };
@@ -130,6 +134,35 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "こえを きく" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "つづきを あそぶ" }));
     expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "shapeMatch");
+  });
+
+  it("一文字の成功開始時に既存成功音を一度だけ要求する", async () => {
+    const started = reduceLesson(
+      { progress: createInitialProgress(), currentKana: "あ", stage: "intro" },
+      { type: "START" },
+    );
+    const saved = reduceLesson(started, { type: "CONTINUE" });
+    const { runtime } = createRuntime(() => Promise.resolve(saved.progress));
+    const play = vi.fn().mockResolvedValue(undefined);
+    const effects: AppSoundEffects = {
+      applySettings: vi.fn(),
+      startGardenLoop: vi.fn().mockResolvedValue(undefined),
+      stopGardenLoop: vi.fn(),
+      play,
+    };
+    render(<App runtime={runtime} effects={effects} />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "つづきを あそぶ" }));
+    play.mockClear();
+    vi.useFakeTimers();
+
+    const correct = screen.getByRole("button", { name: "もじ あ" });
+    fireEvent.click(correct);
+    fireEvent.click(correct);
+
+    expect(play).toHaveBeenCalledOnce();
+    expect(play).toHaveBeenCalledWith("success");
+    act(() => vi.advanceTimersByTime(560));
+    expect(play).toHaveBeenCalledOnce();
   });
 
   it("通常レッスンは庭へ戻っても同じ文字と段階から再開する", async () => {

@@ -15,6 +15,7 @@ export interface RenderLessonOptions {
   readonly speechEnabled?: boolean;
   readonly audio?: AudioGuide;
   readonly onReturnToGarden?: () => void;
+  readonly onCelebrate?: () => void;
 }
 
 /** 状態遷移を実際のreducerへ通す、例外を出さないテスト用音声。 */
@@ -44,10 +45,11 @@ export function renderLesson(options: RenderLessonOptions): { rerender: (next: R
   let state = createState(options);
   let speechEnabled = options.speechEnabled ?? true;
   let onReturnToGarden = options.onReturnToGarden ?? (() => {});
+  let onCelebrate = options.onCelebrate ?? (() => {});
   const audio = options.audio ?? new FakeAudioGuide(options.audioStatus ?? "ready");
   const renderResult: { current: ReturnType<typeof render> | null } = { current: null };
   let pendingDraw = false;
-  const draw = (): React.JSX.Element => <LessonScreen state={state} audio={audio} speechEnabled={speechEnabled} onReturnToGarden={onReturnToGarden} dispatch={(event) => {
+  const draw = (): React.JSX.Element => <LessonScreen state={state} audio={audio} speechEnabled={speechEnabled} onReturnToGarden={onReturnToGarden} onCelebrate={onCelebrate} dispatch={(event) => {
     state = reduceLesson(state, event);
     if (renderResult.current) renderResult.current.rerender(draw());
     else pendingDraw = true;
@@ -62,6 +64,7 @@ export function renderLesson(options: RenderLessonOptions): { rerender: (next: R
       state = createState(next);
       speechEnabled = next.speechEnabled ?? true;
       onReturnToGarden = next.onReturnToGarden ?? (() => {});
+      onCelebrate = next.onCelebrate ?? (() => {});
       renderResult.current?.rerender(draw());
     },
   };

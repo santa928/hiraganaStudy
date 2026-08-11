@@ -10,6 +10,7 @@
 - 46文字画像、60語画像catalog、66文字分の書字templateと生成・完全性検証
 - スマートフォン／タブレットの縦横レイアウト、30fps上限のCanvas書字
 - GitHub Pagesのrepository subpath build、PWA、版付きoffline cache、3種のPWA icon
+- 一文字レッスンの形・音・4書字段階ごとに、対象文字を残す短い花の成功演出
 
 ### セキュリティとプライバシー
 

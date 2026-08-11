@@ -96,6 +96,11 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     setState((current) => reduceLesson(current, event));
   }, []);
 
+  /** 一文字レッスンの花が開く時に、設定を尊重する既存成功音を要求する。 */
+  const playLessonSuccess = useCallback((): void => {
+    void effects.play("success");
+  }, [effects]);
+
   /** saveとresetを一列にし、古いsaveがreset済みの進捗を復活させない。 */
   const queuePersistence = useCallback((operation: () => Promise<void>): Promise<void> => {
     const queued = persistenceQueueRef.current.then(operation, operation);
@@ -203,7 +208,6 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     if ((event.type === "CONTINUE" && state.stage === "reward") || completesRowReview) {
       setScreen(screenForRoute(next));
     }
-    if ((event.type === "ANSWER_SHAPE" || event.type === "ANSWER_SOUND") && event.correct) void effects.play("success");
   };
   const beginReview = (character: KanaCharacter): void => {
     const index = KANA_ORDER.indexOf(character);
@@ -293,7 +297,7 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
   if (screen === "garden") return <GardenScreen progress={state.progress} resumeRoute={route} onContinue={continueFromGarden} onReview={beginReview} onOpenParent={() => setScreen("parent")} />;
   if (screen === "lesson") {
     const displayedState = reviewState ?? state;
-    return <LessonScreen state={displayedState} dispatch={reviewState ? handleReviewDispatch : handleMainDispatch} audio={audio} speechEnabled={displayedState.progress.settings.speech} onReturnToGarden={returnFromLesson} />;
+    return <LessonScreen state={displayedState} dispatch={reviewState ? handleReviewDispatch : handleMainDispatch} audio={audio} speechEnabled={displayedState.progress.settings.speech} onCelebrate={playLessonSuccess} onReturnToGarden={returnFromLesson} />;
   }
   if (screen === "watering") return <main className="app-shell app-shell--garden" style={{ backgroundImage: `url(${background.src})` }}><button className="watering-gate" type="button" aria-label="じょうろを さわる" onClick={startFirstLesson}><img src={wateringCan.src} alt="" width={wateringCan.width} height={wateringCan.height} /></button></main>;
   return <main className="app-shell app-shell--garden" style={{ backgroundImage: `url(${background.src})` }}><button className="sound-gate" aria-label="こえを きく" type="button" onClick={unlockAudio}><svg className="sound-gate__speakerIcon" aria-hidden="true" viewBox="0 0 64 64" focusable="false"><path d="M10 26h12l16-13v38L22 38H10z" /><path d="M45 23c5 5 5 13 0 18M51 16c9 9 9 23 0 32" /></svg></button></main>;

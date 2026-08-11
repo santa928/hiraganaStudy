@@ -1,4 +1,4 @@
-/* global console, document, getComputedStyle, HTMLCanvasElement, HTMLElement, innerHeight, innerWidth, localStorage, performance, process, window */
+/* global console, document, getComputedStyle, HTMLButtonElement, HTMLCanvasElement, HTMLElement, innerHeight, innerWidth, localStorage, performance, process, window */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -48,6 +48,11 @@ export function analyzeWritingSamples(raw) {
     .filter((time, index, values) => index === 0 || time - values[index - 1] > 2)
     .filter((time) => time >= firstPointerTime);
   const frameIntervals = uniquePaintTimes.slice(1).map((time, index) => time - uniquePaintTimes[index]);
+  const monitoredFrameIntervals = frameIntervals.map((interval, index) => {
+    const previousPaint = uniquePaintTimes[index];
+    const continuousInput = raw.pointerTimes.some((pointerTime) => pointerTime > previousPaint && pointerTime <= previousPaint + 38);
+    return continuousInput ? interval : 0;
+  });
   const pointerPaintPairs = raw.pointerTimes.map((pointerTime) => {
     const paintTime = uniquePaintTimes.find((time) => time >= pointerTime);
     return { pointerTime, paintTime };
@@ -61,10 +66,11 @@ export function analyzeWritingSamples(raw) {
     paintFrames: uniquePaintTimes.length,
     unpaintedPointerEvents,
     frameIntervalsMs: frameIntervals.map(rounded),
+    activeFrameIntervalsMs: monitoredFrameIntervals.filter((interval) => interval > 0).map(rounded),
     pointerToPaintMs: pointerToPaint.map(rounded),
     maxFrameIntervalMs: rounded(Math.max(0, ...frameIntervals)),
     maxPointerToPaintMs: rounded(Math.max(0, ...pointerToPaint)),
-    consecutiveFrameIntervalsOver38Ms: longestRunOver(frameIntervals, 38),
+    consecutiveFrameIntervalsOver38Ms: longestRunOver(monitoredFrameIntervals, 38),
     consecutivePointerLatencyOver50Ms: longestRunOver(pointerToPaint, 50),
     note: "Docker headless Chromiumの参考値であり、実機性能認証ではない",
   };
@@ -97,6 +103,18 @@ export function findContainmentIssues(metrics) {
     if (isOutside(target.rect, target.parentRect ?? metrics.root, tolerance)) issues.push(`touch target親境界外: ${target.name}`);
     if (isOutside(target.rect, viewportRect, tolerance)) issues.push(`touch target viewport外: ${target.name}`);
   }
+  return issues;
+}
+
+/** 成功レイヤーが対象へ結び付き、主要操作を遮らないことを検査する。 */
+export function findSuccessOverlayIssues(metrics) {
+  const issues = [];
+  const tolerance = 0.5;
+  const viewportRect = { left: 0, top: 0, right: metrics.viewport.width, bottom: metrics.viewport.height };
+  if (isOutside(metrics.rect, metrics.parentRect, tolerance)) issues.push("成功表示が対象外");
+  if (isOutside(metrics.rect, viewportRect, tolerance)) issues.push("成功表示がviewport外");
+  if (metrics.pointerEvents !== "none") issues.push(`成功表示が操作を遮断: ${metrics.pointerEvents}`);
+  if (metrics.homeDisabled) issues.push("成功中に家が無効");
   return issues;
 }
 
@@ -225,8 +243,29 @@ async function measureViewport(browser, options, viewport, errors) {
     if (gap < -0.5) issues.push(`縦画面の操作重なり: ${rounded(gap)}px`);
   }
   await page.screenshot({ path: join(options.outputDirectory, `${viewport.name}.png`), fullPage: false });
+  await page.getByRole("button", { name: "もじ あ", exact: true }).click();
+  await page.getByTestId("success-bloom").waitFor({ state: "visible" });
+  const success = await page.evaluate(() => {
+    const bloom = document.querySelector(".successBloom");
+    const home = document.querySelector(".lessonScreen__home");
+    if (!(bloom instanceof HTMLElement) || !(bloom.parentElement instanceof HTMLElement)) throw new Error("成功表示の親境界がありません");
+    if (!(home instanceof HTMLButtonElement)) throw new Error("庭へ戻る家がありません");
+    const toRect = (element) => {
+      const value = element.getBoundingClientRect();
+      return { left: value.left, top: value.top, right: value.right, bottom: value.bottom, width: value.width, height: value.height };
+    };
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      rect: toRect(bloom),
+      parentRect: toRect(bloom.parentElement),
+      pointerEvents: getComputedStyle(bloom).pointerEvents,
+      homeDisabled: home.disabled,
+    };
+  });
+  issues.push(...findSuccessOverlayIssues(success));
+  await page.screenshot({ path: join(options.outputDirectory, `${viewport.name}-success.png`), fullPage: false });
   await context.close();
-  return { name: viewport.name, metrics, issues };
+  return { name: viewport.name, metrics: { ...metrics, success }, issues };
 }
 
 /** 書字中のpaint間隔とpointer-to-paint遅延をDocker内の参考値として測る。 */

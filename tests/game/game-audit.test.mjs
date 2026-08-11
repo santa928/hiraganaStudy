@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { analyzeWritingSamples, findContainmentIssues } from "./assertions/check-containment.mjs";
+import { analyzeWritingSamples, findContainmentIssues, findSuccessOverlayIssues } from "./assertions/check-containment.mjs";
 import { backgroundImageUrl } from "./assertions/wait-for-visuals.mjs";
 import { createProgressFixture, loadScenario } from "./run-scenarios.mjs";
 
@@ -33,8 +33,10 @@ describe("完成版browser監査の固定scenario", () => {
     expect(scenarios[0].flow.some((step) => step.action === "clickButton" && step.name === "にわへ もどる")).toBe(true);
     expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.screen === "garden" && step.stage === "shapeMatch")).toBe(true);
     expect(scenarios[0].flow.some((step) => step.action === "completeSoundMatchIfAvailable")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "expectSuccess" && step.capture === "shape-success")).toBe(true);
     expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.stage === "soundMatch")).toBe(false);
     expect(scenarios[1].flow.filter((step) => step.action === "drawAndContinue")).toHaveLength(4);
+    expect(scenarios[1].flow.some((step) => step.action === "expectSuccess" && step.capture === "writing-success")).toBe(true);
     expect(scenarios[2].flow.some((step) => step.action === "clickButton" && step.name === "にわへ もどる")).toBe(true);
     expect(scenarios[3].sessions).toHaveLength(2);
   });
@@ -74,6 +76,17 @@ describe("完成版browser監査の固定scenario", () => {
 
     expect(metrics.frameIntervalsMs).toEqual([20, 20]);
     expect(metrics.maxPointerToPaintMs).toBe(15);
+    expect(metrics.consecutiveFrameIntervalsOver38Ms).toBe(0);
+  });
+
+  it("次のpointer自体が遅い区間をCanvasの連続描画遅延に数えない", () => {
+    const metrics = analyzeWritingSamples({
+      pointerTimes: [100, 300, 500, 700],
+      paintTimes: [105, 305, 505, 705],
+    });
+
+    expect(metrics.frameIntervalsMs).toEqual([200, 200, 200]);
+    expect(metrics.maxPointerToPaintMs).toBe(5);
     expect(metrics.consecutiveFrameIntervalsOver38Ms).toBe(0);
   });
 
@@ -122,6 +135,23 @@ describe("完成版browser監査の固定scenario", () => {
     });
 
     expect(metrics.unpaintedPointerEvents).toBe(2);
+  });
+
+  it("成功表示の親・viewport外配置と操作遮断を拒否する", () => {
+    const issues = findSuccessOverlayIssues({
+      viewport: { width: 390, height: 844 },
+      rect: { left: 300, top: 760, right: 410, bottom: 860, width: 110, height: 100 },
+      parentRect: { left: 280, top: 740, right: 380, bottom: 840, width: 100, height: 100 },
+      pointerEvents: "auto",
+      homeDisabled: true,
+    });
+
+    expect(issues).toEqual([
+      "成功表示が対象外",
+      "成功表示がviewport外",
+      "成功表示が操作を遮断: auto",
+      "成功中に家が無効",
+    ]);
   });
 
   it("READMEの公式Playwright imageをlockfileと同じ版にして空volumeへ依存しない", async () => {

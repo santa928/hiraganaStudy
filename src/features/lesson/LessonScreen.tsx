@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AudioGuide } from "../../platform/audio/AudioGuide";
 import { getIllustration, getWorldIllustration } from "../learning/content/assetCatalog";
@@ -11,6 +11,7 @@ import { PromptCard } from "./PromptCard";
 import { RewardStep } from "./RewardStep";
 import { SoundPrompt } from "./SoundPrompt";
 import { SpeakerIcon } from "./SpeakerIcon";
+import { SuccessBloom } from "./SuccessBloom";
 import { WritingStep } from "./WritingStep";
 import "./LessonScreen.css";
 
@@ -23,6 +24,20 @@ export interface LessonScreenProps {
   readonly speechEnabled?: boolean;
   /** 現在の学習状態を保ったまま庭へ戻る。 */
   readonly onReturnToGarden: () => void;
+  /** 正解演出の開始時に、設定済みの効果音を一度だけ要求する。 */
+  readonly onCelebrate?: () => void;
+}
+
+export const SUCCESS_CELEBRATION_MS = 560;
+
+type SuccessTarget =
+  | { readonly kind: "choice"; readonly choice: LearningState["currentKana"] }
+  | { readonly kind: "writing" };
+
+interface PendingSuccess {
+  readonly stageIdentity: string;
+  readonly event: LessonEvent;
+  readonly target: SuccessTarget;
 }
 
 type GuideKey = "intro" | "shape" | "sound" | "again" | "show" | "traceWide" | "traceNarrow" | "copyWithModel" | "freeWrite" | "reward";
@@ -71,15 +86,19 @@ function awaitedIllustration(character: LearningState["currentKana"]): string {
 }
 
 /** 状態機械の8段階を、朝の庭の一画面一操作へ接続する。 */
-export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onReturnToGarden }: LessonScreenProps): React.JSX.Element {
+export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onReturnToGarden, onCelebrate }: LessonScreenProps): React.JSX.Element {
   const entry = useMemo(() => findKana(state.currentKana), [state.currentKana]);
   const gardenBackground = getWorldIllustration("garden-background");
   const wateringCan = getWorldIllustration("watering-can");
   const mountedRef = useRef(true);
   const replayRequestRef = useRef(0);
+  const successTimerRef = useRef<number | null>(null);
+  const pendingSuccessRef = useRef<PendingSuccess | null>(null);
+  const [pendingSuccess, setPendingSuccess] = useState<PendingSuccess | null>(null);
   const choices = useMemo(() => createLessonChoices(entry.character), [entry.character]);
   const isChoiceStage = state.stage === "shapeMatch" || state.stage === "soundMatch";
   const stageIdentity = `${state.currentKana}-${state.stage}`;
+  const visiblePendingSuccess = pendingSuccess?.stageIdentity === stageIdentity ? pendingSuccess : null;
   const stageAttempts = state.progress.lessonAttempt?.character === state.currentKana
     && state.progress.lessonAttempt.stage === state.stage
     ? state.progress.lessonAttempt.count
@@ -94,6 +113,30 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
   const guideRef = useRef(guide);
   stageIdentityRef.current = stageIdentity;
   guideRef.current = guide;
+
+  /** 予約中の成功遷移を破棄し、後から古い段階を進めない。 */
+  const cancelPendingSuccess = useCallback((): void => {
+    if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current);
+    successTimerRef.current = null;
+    pendingSuccessRef.current = null;
+    setPendingSuccess(null);
+  }, []);
+
+  /** 現在の答えを短く祝った後、同じ段階なら一度だけ状態機械へ渡す。 */
+  const beginSuccess = (event: LessonEvent, target: SuccessTarget): void => {
+    if (pendingSuccessRef.current !== null) return;
+    const pending = { stageIdentity, event, target };
+    pendingSuccessRef.current = pending;
+    setPendingSuccess(pending);
+    onCelebrate?.();
+    successTimerRef.current = window.setTimeout(() => {
+      if (pendingSuccessRef.current !== pending || stageIdentityRef.current !== pending.stageIdentity) return;
+      successTimerRef.current = null;
+      pendingSuccessRef.current = null;
+      setPendingSuccess(null);
+      dispatch(event);
+    }, SUCCESS_CELEBRATION_MS);
+  };
 
   useEffect(() => {
     preloadLessonImages(state.currentKana);
@@ -121,6 +164,12 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+
+  useEffect(() => () => {
+    if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current);
+    successTimerRef.current = null;
+    pendingSuccessRef.current = null;
+  }, [stageIdentity]);
 
   const replayGuide = (): void => {
     if (!speechEnabled) return;
@@ -159,19 +208,21 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
     const event: LessonEvent = state.stage === "shapeMatch"
       ? { type: "ANSWER_SHAPE", correct }
       : { type: "ANSWER_SOUND", correct };
-    dispatch(event);
+    if (correct) beginSuccess(event, { kind: "choice", choice });
+    else dispatch(event);
   };
 
   const writing = (): React.JSX.Element | null => {
-    if (state.stage === "traceWide") return <WritingStep key={`${entry.character}-traceWide`} character={entry.character} mode="traceWide" onComplete={() => dispatch({ type: "COMPLETE_TRACE", width: "wide" })} />;
-    if (state.stage === "traceNarrow") return <WritingStep key={`${entry.character}-traceNarrow`} character={entry.character} mode="traceNarrow" onComplete={() => dispatch({ type: "COMPLETE_TRACE", width: "narrow" })} />;
-    if (state.stage === "copyWithModel") return <WritingStep key={`${entry.character}-copyWithModel`} character={entry.character} mode="copyWithModel" onComplete={() => dispatch({ type: "COMPLETE_COPY" })} />;
-    if (state.stage === "freeWrite") return <WritingStep key={`${entry.character}-freeWrite`} character={entry.character} mode="freeWrite" onComplete={() => dispatch({ type: "COMPLETE_FREE_WRITE" })} onSkip={() => dispatch({ type: "SKIP_FREE_WRITE" })} />;
+    const celebrating = visiblePendingSuccess?.target.kind === "writing";
+    if (state.stage === "traceWide") return <WritingStep key={`${entry.character}-traceWide`} character={entry.character} mode="traceWide" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_TRACE", width: "wide" }, { kind: "writing" })} />;
+    if (state.stage === "traceNarrow") return <WritingStep key={`${entry.character}-traceNarrow`} character={entry.character} mode="traceNarrow" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_TRACE", width: "narrow" }, { kind: "writing" })} />;
+    if (state.stage === "copyWithModel") return <WritingStep key={`${entry.character}-copyWithModel`} character={entry.character} mode="copyWithModel" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_COPY" }, { kind: "writing" })} />;
+    if (state.stage === "freeWrite") return <WritingStep key={`${entry.character}-freeWrite`} character={entry.character} mode="freeWrite" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_FREE_WRITE" }, { kind: "writing" })} onSkip={() => dispatch({ type: "SKIP_FREE_WRITE" })} />;
     return null;
   };
 
   return (
-    <main className="lessonScreen" data-testid="lesson-stage" data-stage={state.stage} data-reduced-motion={state.progress.settings.reducedMotion || undefined} style={{ backgroundImage: `url(${gardenBackground.src})` }}>
+    <main className="lessonScreen" data-testid="lesson-stage" data-stage={state.stage} data-celebrating={visiblePendingSuccess ? "true" : undefined} data-reduced-motion={state.progress.settings.reducedMotion || undefined} style={{ backgroundImage: `url(${gardenBackground.src})` }}>
       <header className="lessonScreen__hud" data-layout="hud">
         {state.stage === "soundMatch"
           ? <span className="lessonScreen__hudSpacer" aria-hidden="true" />
@@ -179,7 +230,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
         <button className="lessonScreen__speaker" type="button" aria-label="こえを もういちど きく" onClick={replayGuide}>
           <SpeakerIcon />
         </button>
-        <button className="lessonScreen__home" type="button" aria-label="にわへ もどる" onClick={onReturnToGarden}>
+        <button className="lessonScreen__home" type="button" aria-label="にわへ もどる" onClick={() => { cancelPendingSuccess(); onReturnToGarden(); }}>
           <HomeIcon />
         </button>
       </header>
@@ -191,10 +242,11 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
           {state.stage === "soundMatch" ? <SoundPrompt onReplay={replayGuide} /> : null}
           {writing()}
           {state.stage === "reward" ? <RewardStep entry={entry} /> : null}
+          {visiblePendingSuccess?.target.kind === "writing" ? <SuccessBloom character={entry.character} /> : null}
         </section>
         <section className="lessonScreen__actions" data-layout="actions">
           {state.stage === "intro" ? <button className="lessonButton" type="button" onClick={() => dispatch({ type: "CONTINUE" })}>はじめる</button> : null}
-          {isChoiceStage ? <ChoiceGrid choices={choices} correct={entry.character} guideCount={stageAttempts} onChoose={answer} /> : null}
+          {isChoiceStage ? <ChoiceGrid choices={choices} correct={entry.character} guideCount={stageAttempts} successChoice={visiblePendingSuccess?.target.kind === "choice" ? visiblePendingSuccess.target.choice : undefined} disabled={visiblePendingSuccess !== null} onChoose={answer} /> : null}
           {state.stage === "reward" ? <button className="lessonButton lessonButton--watering" type="button" onClick={() => dispatch({ type: "CONTINUE" })}>
             <img src={wateringCan.src} alt="" width={wateringCan.width} height={wateringCan.height} />じょうろで つぎへ
           </button> : null}

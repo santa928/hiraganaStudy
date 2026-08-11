@@ -20,6 +20,7 @@
     { "action": "clickButton", "name": "つづきを あそぶ" },
     { "action": "expectState", "screen": "lesson", "stage": "shapeMatch", "kana": "あ", "guideCount": 1 },
     { "action": "clickKana", "character": "あ" },
+    { "action": "expectSuccess", "capture": "shape-success" },
     { "action": "completeSoundMatchIfAvailable", "character": "あ", "capture": "sound-match" },
     { "action": "expectState", "screen": "lesson", "stage": "traceWide", "kana": "あ" }
   ]

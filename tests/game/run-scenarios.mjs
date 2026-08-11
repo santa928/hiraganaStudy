@@ -129,6 +129,12 @@ async function executeStep(page, step, sessionOutput, stateHistory) {
     if (!wrong) throw new Error("誤答用の文字選択肢がありません");
     await page.getByRole("button", { name: `もじ ${wrong}`, exact: true }).click();
   } else if (step.action === "completeSoundMatchIfAvailable") {
+    await page.waitForFunction(() => {
+      const raw = globalThis.render_game_to_text?.();
+      if (!raw) return false;
+      const stage = JSON.parse(raw).stage;
+      return stage === "soundMatch" || stage === "traceWide";
+    });
     const state = await readGameState(page);
     if (state.stage === "soundMatch") {
       await waitForVisualAssets(page);
@@ -145,12 +151,27 @@ async function executeStep(page, step, sessionOutput, stateHistory) {
   } else if (step.action === "expectNoButton") {
     if (await page.getByRole("button", { name: step.name, exact: true }).count() !== 0) throw new Error(`表示してはいけないbuttonがあります: ${step.name}`);
   } else if (step.action === "expectState") {
-    await page.waitForFunction((expected) => {
-      const raw = globalThis.render_game_to_text?.();
-      if (!raw) return false;
-      const state = JSON.parse(raw);
-      return Object.entries(expected).every(([key, value]) => state[key] === value);
-    }, Object.fromEntries(Object.entries(step).filter(([key]) => key !== "action")), { timeout: 10_000 });
+    const expected = Object.fromEntries(Object.entries(step).filter(([key]) => key !== "action"));
+    try {
+      await page.waitForFunction((wanted) => {
+        const raw = globalThis.render_game_to_text?.();
+        if (!raw) return false;
+        const state = JSON.parse(raw);
+        return Object.entries(wanted).every(([key, value]) => state[key] === value);
+      }, expected, { timeout: 10_000 });
+    } catch (error) {
+      const current = await readGameState(page);
+      throw new Error(`expectState timeout: expected=${JSON.stringify(expected)} current=${JSON.stringify(current)}`, { cause: error });
+    }
+  } else if (step.action === "expectSuccess") {
+    const bloom = page.getByTestId("success-bloom");
+    await bloom.waitFor({ state: "visible" });
+    if (await page.locator('[data-success="true"], [data-celebrating="true"]').count() === 0) {
+      throw new Error("成功対象の装飾がありません");
+    }
+    if (step.capture) {
+      await page.screenshot({ path: join(sessionOutput, `${step.capture}.png`), fullPage: false });
+    }
   } else if (step.action === "capture") {
     await waitForVisualAssets(page);
     const path = join(sessionOutput, `${step.name}.png`);
