@@ -6,7 +6,10 @@ import { KANA_ENTRIES, findKana, kanaAssociationLabel } from "../learning/conten
 import type { KanaCharacter } from "../learning/content/types";
 import type { LearningState, LessonEvent } from "../learning/model/types";
 import { ChoiceGrid } from "../lesson/ChoiceGrid";
+import { HomeIcon } from "../lesson/HomeIcon";
 import { PromptCard } from "../lesson/PromptCard";
+import { SoundPrompt } from "../lesson/SoundPrompt";
+import { SpeakerIcon } from "../lesson/SpeakerIcon";
 import "../lesson/LessonScreen.css";
 import "./GardenScreen.css";
 
@@ -15,6 +18,8 @@ export interface RowReviewScreenProps {
   readonly state: LearningState;
   readonly dispatch: (event: LessonEvent) => void;
   readonly audio: AudioGuide;
+  /** 行復習の段階を保ったまま庭へ戻る。 */
+  readonly onReturnToGarden: () => void;
 }
 
 /** 行内の比較しやすい文字を固定順で三つ返す。 */
@@ -29,7 +34,7 @@ export function createRowReviewChoices(character: KanaCharacter): readonly KanaC
 }
 
 /** 行末の文字を題材に、形から音へ一問ずつ復習する。 */
-export function RowReviewScreen({ state, dispatch, audio }: RowReviewScreenProps): React.JSX.Element {
+export function RowReviewScreen({ state, dispatch, audio, onReturnToGarden }: RowReviewScreenProps): React.JSX.Element {
   const entry = useMemo(() => findKana(state.currentKana), [state.currentKana]);
   const review = state.progress.rowReview;
   const step = review?.step ?? "shape";
@@ -57,6 +62,12 @@ export function RowReviewScreen({ state, dispatch, audio }: RowReviewScreenProps
     return () => audio.cancel();
   }, [audio, guide, state.progress.settings.speech]);
   useEffect(() => {
+    if (isShape) return;
+    if (state.progress.settings.speech && audio.getStatus() !== "visual-only") return;
+    audio.cancel();
+    dispatch({ type: "SKIP_SOUND_MATCH" });
+  }, [audio, dispatch, isShape, state.progress.settings.speech]);
+  useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
@@ -68,14 +79,19 @@ export function RowReviewScreen({ state, dispatch, audio }: RowReviewScreenProps
     replayRequestRef.current = requestId;
     audio.cancel();
     const replay = async (): Promise<void> => {
-      if (audio.getStatus() !== "ready") {
+      let status = audio.getStatus();
+      if (status !== "ready") {
         try {
-          await audio.unlock();
+          status = await audio.unlock();
         } catch {
           return;
         }
       }
       if (!mountedRef.current || replayRequestRef.current !== requestId || stageIdentityRef.current !== requestedIdentity) return;
+      if (status === "visual-only") {
+        if (!isShape) dispatch({ type: "SKIP_SOUND_MATCH" });
+        return;
+      }
       await audio.speak(guide, { interrupt: true });
     };
     void replay();
@@ -89,11 +105,12 @@ export function RowReviewScreen({ state, dispatch, audio }: RowReviewScreenProps
     <main className="rowReviewScreen lessonScreen" data-testid="row-review" data-step={step} data-reduced-motion={state.progress.settings.reducedMotion || undefined} style={{ backgroundImage: `url(${background.src})` }}>
       <header className="rowReviewScreen__header">
         <p>この ぎょうを もういちど</p>
-        <button className="lessonScreen__speaker" type="button" aria-label="こえを もういちど きく" onClick={replayGuide}><svg aria-hidden="true" viewBox="0 0 64 64" focusable="false"><path d="M10 26h12l16-13v38L22 38H10z" /><path d="M45 23c5 5 5 13 0 18M51 16c9 9 9 23 0 32" /></svg></button>
+        <button className="lessonScreen__speaker" type="button" aria-label="こえを もういちど きく" onClick={replayGuide}><SpeakerIcon /></button>
+        <button className="lessonScreen__home" type="button" aria-label="にわへ もどる" onClick={onReturnToGarden}><HomeIcon /></button>
       </header>
       <p className="lessonScreen__guide">{guide}</p>
       <section className="rowReviewScreen__body">
-        <PromptCard entry={entry} showCharacter={isShape} emphasized={attempt >= 2} />
+        {isShape ? <PromptCard entry={entry} showCharacter emphasized={attempt >= 2} /> : <SoundPrompt onReplay={replayGuide} />}
         <ChoiceGrid choices={choices} correct={entry.character} guideCount={attempt} onChoose={answer} />
       </section>
     </main>

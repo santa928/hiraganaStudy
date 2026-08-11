@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
+import { afterEach } from "vitest";
 
 import { ParentDashboard, type ParentEnvironment } from "./ParentDashboard";
 import { ParentGate } from "./ParentGate";
@@ -9,6 +10,8 @@ import { createInitialProgress } from "../learning/model/reducer";
 const environment: ParentEnvironment = { audioStatus: "ready", storage: "normal", displayMode: "browser", pwaStatus: "未確認" };
 
 describe("ParentGate", () => {
+  afterEach(() => vi.useRealTimers());
+
   /** jsdomでも押下領域の座標契約を確認する。 */
   function setGateBounds(gate: HTMLElement): void {
     vi.spyOn(gate, "getBoundingClientRect").mockReturnValue({
@@ -26,6 +29,32 @@ describe("ParentGate", () => {
     await act(async () => { vi.advanceTimersByTime(2000); });
     expect(onOpen).toHaveBeenCalledOnce();
     vi.useRealTimers();
+  });
+
+  it("必要時間を常時示し、長押し開始から離すまで即座に反応を返す", () => {
+    vi.useFakeTimers();
+    render(<ParentGate onOpen={vi.fn()} />);
+    const gate = screen.getByRole("button", { name: "おとなの せってい" });
+
+    expect(screen.getByText("2びょう ながおし")).toBeVisible();
+    expect(gate).toHaveAttribute("data-holding", "false");
+
+    fireEvent.pointerDown(gate, { pointerId: 1, clientX: 24, clientY: 24 });
+    expect(gate).toHaveAttribute("data-holding", "true");
+    expect(screen.getByText("そのまま おしてね")).toBeVisible();
+
+    fireEvent.pointerUp(gate, { pointerId: 1, clientX: 24, clientY: 24 });
+    expect(gate).toHaveAttribute("data-holding", "false");
+    expect(screen.getByText("2びょう ながおし")).toBeVisible();
+  });
+
+  it("iOSの長押しメニューを出さず保護者操作を継続する", () => {
+    render(<ParentGate onOpen={vi.fn()} />);
+    const gate = screen.getByRole("button", { name: "おとなの せってい" });
+    const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+
+    expect(gate.dispatchEvent(contextMenu)).toBe(false);
+    expect(contextMenu.defaultPrevented).toBe(true);
   });
 
   it("2秒の連続保持だけで開き、短いtapとcancelでは開かない", async () => {

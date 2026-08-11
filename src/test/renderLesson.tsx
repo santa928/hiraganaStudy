@@ -12,7 +12,9 @@ export interface RenderLessonOptions {
   readonly stage: LessonStage;
   readonly audioStatus?: AudioGuideStatus;
   readonly reducedMotion?: boolean;
+  readonly speechEnabled?: boolean;
   readonly audio?: AudioGuide;
+  readonly onReturnToGarden?: () => void;
 }
 
 /** 状態遷移を実際のreducerへ通す、例外を出さないテスト用音声。 */
@@ -34,23 +36,32 @@ export function renderLesson(options: RenderLessonOptions): { rerender: (next: R
       [next.currentKana]: { ...progress.kana[next.currentKana], seen: next.stage !== "intro" },
     };
     return {
-      progress: { ...progress, currentKanaIndex, stage: next.stage, kana, settings: { ...progress.settings, reducedMotion: next.reducedMotion ?? false } },
+      progress: { ...progress, currentKanaIndex, stage: next.stage, kana, settings: { ...progress.settings, speech: next.speechEnabled ?? true, reducedMotion: next.reducedMotion ?? false } },
       currentKana: next.currentKana,
       stage: next.stage,
     };
   };
   let state = createState(options);
+  let speechEnabled = options.speechEnabled ?? true;
+  let onReturnToGarden = options.onReturnToGarden ?? (() => {});
   const audio = options.audio ?? new FakeAudioGuide(options.audioStatus ?? "ready");
   const renderResult: { current: ReturnType<typeof render> | null } = { current: null };
-  const draw = (): React.JSX.Element => <LessonScreen state={state} audio={audio} dispatch={(event) => {
+  let pendingDraw = false;
+  const draw = (): React.JSX.Element => <LessonScreen state={state} audio={audio} speechEnabled={speechEnabled} onReturnToGarden={onReturnToGarden} dispatch={(event) => {
     state = reduceLesson(state, event);
-    renderResult.current?.rerender(draw());
+    if (renderResult.current) renderResult.current.rerender(draw());
+    else pendingDraw = true;
   }} />;
   renderResult.current = render(draw());
+  if (pendingDraw) {
+    renderResult.current.rerender(draw());
+  }
 
   return {
     rerender: (next) => {
       state = createState(next);
+      speechEnabled = next.speechEnabled ?? true;
+      onReturnToGarden = next.onReturnToGarden ?? (() => {});
       renderResult.current?.rerender(draw());
     },
   };

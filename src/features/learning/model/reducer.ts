@@ -322,6 +322,14 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
     return updateCurrentKana(state, (current) => ({ ...current, soundMatched: true }), { stage: "traceWide" });
   }
 
+  if (event.type === "SKIP_SOUND_MATCH" && state.stage === "soundMatch") {
+    if (state.progress.rowReview?.step === "sound") {
+      return advanceAfterRowReview(updateCurrentKana(state, (current) => ({ ...current, completedOnce: true })));
+    }
+
+    return updateProgress(state, { stage: "traceWide" });
+  }
+
   if (event.type === "COMPLETE_TRACE") {
     if (event.width === "wide" && state.stage === "traceWide") {
       return updateCurrentKana(state, (current) => ({ ...current, traceWideTried: true }), { stage: "traceNarrow" });

@@ -20,7 +20,7 @@ const STAGES = ["intro", "shapeMatch", "soundMatch", "traceWide", "traceNarrow",
 const FALLBACK_KEY = "hiragana-no-niwa:progress:v1";
 
 /** test-onlyの開始状態を、productionの保存schemaと同じ形で作る。 */
-export function createProgressFixture({ completedKanaCount = 0, currentKana = KANA_ORDER[Math.min(completedKanaCount, 45)], stage = "intro" } = {}) {
+export function createProgressFixture({ completedKanaCount = 0, currentKana = KANA_ORDER[Math.min(completedKanaCount, 45)], stage = "intro", rowReview = null } = {}) {
   const currentKanaIndex = Math.max(0, KANA_ORDER.indexOf(currentKana));
   const currentStageIndex = Math.max(0, STAGES.indexOf(stage));
   const kana = Object.fromEntries(KANA_ORDER.map((character, index) => {
@@ -48,7 +48,7 @@ export function createProgressFixture({ completedKanaCount = 0, currentKana = KA
     schemaVersion: 1,
     currentKanaIndex,
     stage,
-    rowReview: null,
+    rowReview,
     lessonAttempt: null,
     kana,
     words,
@@ -128,6 +128,15 @@ async function executeStep(page, step, sessionOutput, stateHistory) {
     const wrong = state.choices.find((choice) => choice !== step.correct);
     if (!wrong) throw new Error("誤答用の文字選択肢がありません");
     await page.getByRole("button", { name: `もじ ${wrong}`, exact: true }).click();
+  } else if (step.action === "completeSoundMatchIfAvailable") {
+    const state = await readGameState(page);
+    if (state.stage === "soundMatch") {
+      await waitForVisualAssets(page);
+      if (step.capture) await page.screenshot({ path: join(sessionOutput, `${step.capture}.png`), fullPage: false });
+      await page.getByRole("button", { name: `もじ ${step.character}`, exact: true }).click();
+    } else if (state.stage !== "traceWide") {
+      throw new Error(`音合わせの完了先が不正です: ${state.stage}`);
+    }
   } else if (step.action === "drawAndContinue") {
     await drawStroke(page);
     await page.getByRole("button", { name: "つぎへ", exact: true }).click();
@@ -201,9 +210,9 @@ async function runSession(browser, options, scenario, session, consoleErrors) {
   await context.close();
 }
 
-/** 3つの完成導線scenarioをproduction previewへ通す。 */
+/** 4つの完成導線scenarioをproduction previewへ通す。 */
 export async function runScenarios(options) {
-  const scenarioPaths = ["first-kana.json", "writing.json", "word-unlock.json"]
+  const scenarioPaths = ["first-kana.json", "writing.json", "row-review-home.json", "word-unlock.json"]
     .map((name) => resolve(options.scenarioDirectory, name));
   const scenarios = await Promise.all(scenarioPaths.map(loadScenario));
   const browser = await chromium.launch({

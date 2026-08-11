@@ -1,0 +1,22 @@
+{
+  "id": "row-review-home",
+  "description": "あ行復習から庭へ戻り、同じ形復習を再開する",
+  "fixture": {
+    "kind": "progress",
+    "completedKanaCount": 4,
+    "currentKana": "お",
+    "stage": "shapeMatch",
+    "rowReview": { "row": "a", "step": "shape" }
+  },
+  "flow": [
+    { "action": "expectState", "screen": "garden", "stage": "shapeMatch", "kana": "お" },
+    { "action": "clickButton", "name": "つづきを あそぶ" },
+    { "action": "expectState", "screen": "rowReview", "stage": "shapeMatch", "kana": "お" },
+    { "action": "capture", "name": "row-review" },
+    { "action": "clickButton", "name": "にわへ もどる" },
+    { "action": "expectState", "screen": "garden", "stage": "shapeMatch", "kana": "お" },
+    { "action": "clickButton", "name": "つづきを あそぶ" },
+    { "action": "expectState", "screen": "rowReview", "stage": "shapeMatch", "kana": "お" },
+    { "action": "capture", "name": "row-review-resumed" }
+  ]
+}

@@ -76,6 +76,7 @@ export type LessonEvent =
   | { readonly type: "START" }
   | { readonly type: "ANSWER_SHAPE"; readonly correct: boolean }
   | { readonly type: "ANSWER_SOUND"; readonly correct: boolean }
+  | { readonly type: "SKIP_SOUND_MATCH" }
   | { readonly type: "COMPLETE_TRACE"; readonly width: "wide" | "narrow" }
   | { readonly type: "COMPLETE_COPY" }
   | { readonly type: "COMPLETE_FREE_WRITE" }

@@ -81,6 +81,14 @@ describe("学習状態機械", () => {
     expect(result.progress.kana["さ"].soundMatched).toBe(true);
   });
 
+  it("再生できない音合わせは音の達成を偽装せず太いなぞりへ進む", () => {
+    const result = reduceLesson(stateAt("さ", "soundMatch"), { type: "SKIP_SOUND_MATCH" });
+
+    expect(result.stage).toBe("traceWide");
+    expect(result.progress.kana["さ"].soundMatched).toBe(false);
+    expect(result.progress.lessonAttempt).toBeNull();
+  });
+
   it("音合わせの誤答は段階を保ち、案内回数だけを増やす", () => {
     const result = reduceLesson(stateAt("さ", "soundMatch"), { type: "ANSWER_SOUND", correct: false });
 
@@ -160,6 +168,18 @@ describe("学習状態機械", () => {
     expect(next.currentKana).toBe("か");
     expect(next.stage).toBe("intro");
     expect(next.progress.kana["お"].completedOnce).toBe(true);
+  });
+
+  it("行復習の音を再生できない時は音達成を変えず次の文字へ進む", () => {
+    const review = reduceLesson(stateAt("お", "reward"), { type: "CONTINUE" });
+    const sound = reduceLesson(review, { type: "ANSWER_SHAPE", correct: true });
+    const next = reduceLesson(sound, { type: "SKIP_SOUND_MATCH" });
+
+    expect(next.progress.rowReview).toBeNull();
+    expect(next.currentKana).toBe("か");
+    expect(next.stage).toBe("intro");
+    expect(next.progress.kana["お"].completedOnce).toBe(true);
+    expect(next.progress.kana["お"].soundMatched).toBe(sound.progress.kana["お"].soundMatched);
   });
 
   it("45文字完了では単語を解放しない", () => {

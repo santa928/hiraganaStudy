@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { vi } from "vitest";
 
 import { renderLesson } from "../../test/renderLesson";
@@ -44,20 +44,57 @@ describe("LessonScreen", () => {
     expect(screen.getByTestId("prompt-illustration")).toBeVisible();
   });
 
-  it("音合わせでは見本文字を隠し、音声なしでも文字だけを選べる", () => {
-    renderLesson({ currentKana: "あ", stage: "soundMatch", audioStatus: "visual-only" });
+  it("音合わせは曖昧な画像を出さず、音声操作と文字だけを選べる", () => {
+    renderLesson({ currentKana: "い", stage: "soundMatch", audioStatus: "ready" });
 
+    expect(screen.queryByLabelText("いまの もじ")).not.toBeInTheDocument();
     expect(screen.queryByTestId("prompt-character")).not.toBeInTheDocument();
-    expect(screen.getByTestId("prompt-illustration")).toBeVisible();
+    expect(screen.queryByTestId("prompt-illustration")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "こえを きく" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: /もじ/ })).toHaveLength(3);
   });
 
-  it("音合わせの画像fallbackは答えの文字を表示しない", () => {
-    renderLesson({ currentKana: "あ", stage: "soundMatch" });
-    fireEvent.error(screen.getByTestId("prompt-illustration"));
+  it("右上の再生操作は用途不明な鳥画像ではなくスピーカー記号にする", () => {
+    renderLesson({ currentKana: "あ", stage: "intro" });
+    const replay = screen.getByRole("button", { name: "こえを もういちど きく" });
 
-    expect(screen.getByTestId("illustration-fallback")).not.toHaveTextContent("あ");
-    expect(screen.getAllByRole("button", { name: /もじ/ })).toHaveLength(3);
+    expect(within(replay).queryByRole("img")).not.toBeInTheDocument();
+    expect(replay.querySelector("svg")).toBeInTheDocument();
+  });
+
+  it("全画面操作を出さず、右上の家から庭へ戻る", () => {
+    const onReturnToGarden = vi.fn();
+    renderLesson({ currentKana: "い", stage: "shapeMatch", onReturnToGarden });
+
+    expect(screen.queryByRole("button", { name: /がめんを/ })).not.toBeInTheDocument();
+    const home = screen.getByRole("button", { name: "にわへ もどる" });
+    expect(home.querySelector("svg")).toBeInTheDocument();
+    fireEvent.click(home);
+    expect(onReturnToGarden).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["端末に音声がない", { audioStatus: "visual-only" as const, speechEnabled: true }],
+    ["保護者が音声を切った", { audioStatus: "ready" as const, speechEnabled: false }],
+  ])("%s時は成立しない音合わせを表示せず太いなぞりへ進む", async (_description, settings) => {
+    renderLesson({ currentKana: "い", stage: "soundMatch", ...settings });
+
+    await waitFor(() => expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide"));
+    expect(screen.queryByRole("button", { name: "もじ い" })).not.toBeInTheDocument();
+  });
+
+  it("再生操作で端末音声なしと判明した時も音合わせを抜ける", async () => {
+    const audio: AudioGuide = {
+      unlock: vi.fn().mockResolvedValue("visual-only"),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "locked",
+    };
+    renderLesson({ currentKana: "い", stage: "soundMatch", audio });
+
+    fireEvent.click(screen.getByRole("button", { name: "こえを きく" }));
+
+    await waitFor(() => expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide"));
   });
 
   it("書字は一筆後だけ続ける操作を有効にし、自由書字はskipで進める", () => {

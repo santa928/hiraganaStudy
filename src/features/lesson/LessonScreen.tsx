@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import type { AudioGuide } from "../../platform/audio/AudioGuide";
-import { useFullscreen } from "../../platform/fullscreen/useFullscreen";
 import { getIllustration, getWorldIllustration } from "../learning/content/assetCatalog";
 import { KANA_ORDER, findKana, kanaAssociationLabel } from "../learning/content/kana";
 import type { KanaEntry } from "../learning/content/types";
 import type { LearningState, LessonEvent } from "../learning/model/types";
 import { ChoiceGrid } from "./ChoiceGrid";
+import { HomeIcon } from "./HomeIcon";
 import { PromptCard } from "./PromptCard";
 import { RewardStep } from "./RewardStep";
+import { SoundPrompt } from "./SoundPrompt";
+import { SpeakerIcon } from "./SpeakerIcon";
 import { WritingStep } from "./WritingStep";
 import "./LessonScreen.css";
 
@@ -19,8 +21,8 @@ export interface LessonScreenProps {
   readonly audio: AudioGuide;
   /** 保護者設定で読み上げを停止している時は、再生要求も出さない。 */
   readonly speechEnabled?: boolean;
-  /** 任意復習だけに表示する、本線を変更しない庭への戻り口。 */
-  readonly onReturnToGarden?: () => void;
+  /** 現在の学習状態を保ったまま庭へ戻る。 */
+  readonly onReturnToGarden: () => void;
 }
 
 type GuideKey = "intro" | "shape" | "sound" | "again" | "show" | "traceWide" | "traceNarrow" | "copyWithModel" | "freeWrite" | "reward";
@@ -31,7 +33,7 @@ function guideMessage(key: GuideKey, entry: KanaEntry): string {
   const messages: Record<GuideKey, string> = {
     intro: association,
     shape: `${association}。おなじ かたちを さがそう`,
-    sound: `${association}。こえと えで もじを さがそう`,
+    sound: `${association}。こえを きいて もじを さがそう`,
     again: `もういちど、${association}。ゆっくり みてみよう`,
     show: `${association}。おなじ もじを おしてみよう`,
     traceWide: "ふとい みちを なぞろう",
@@ -71,10 +73,8 @@ function awaitedIllustration(character: LearningState["currentKana"]): string {
 /** 状態機械の8段階を、朝の庭の一画面一操作へ接続する。 */
 export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onReturnToGarden }: LessonScreenProps): React.JSX.Element {
   const entry = useMemo(() => findKana(state.currentKana), [state.currentKana]);
-  const voiceBird = getWorldIllustration("voice-bird");
   const gardenBackground = getWorldIllustration("garden-background");
   const wateringCan = getWorldIllustration("watering-can");
-  const { isFullscreen, toggleFullscreen } = useFullscreen();
   const mountedRef = useRef(true);
   const replayRequestRef = useRef(0);
   const choices = useMemo(() => createLessonChoices(entry.character), [entry.character]);
@@ -100,6 +100,13 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
   }, [state.currentKana]);
 
   useEffect(() => {
+    if (state.stage !== "soundMatch") return;
+    if (speechEnabled && audio.getStatus() !== "visual-only") return;
+    audio.cancel();
+    dispatch({ type: "SKIP_SOUND_MATCH" });
+  }, [audio, dispatch, speechEnabled, state.stage]);
+
+  useEffect(() => {
     replayRequestRef.current += 1;
     audio.cancel();
     if (!speechEnabled) return;
@@ -119,13 +126,15 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
     if (!speechEnabled) return;
     const requestId = replayRequestRef.current + 1;
     const requestedStageIdentity = stageIdentity;
+    const requestedStage = state.stage;
     const requestedGuide = guide;
     replayRequestRef.current = requestId;
     audio.cancel();
     const replay = async (): Promise<void> => {
-      if (audio.getStatus() !== "ready") {
+      let status = audio.getStatus();
+      if (status !== "ready") {
         try {
-          await audio.unlock();
+          status = await audio.unlock();
         } catch {
           return;
         }
@@ -136,6 +145,10 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
         || stageIdentityRef.current !== requestedStageIdentity
         || guideRef.current !== requestedGuide
       ) return;
+      if (status === "visual-only") {
+        if (requestedStage === "soundMatch") dispatch({ type: "SKIP_SOUND_MATCH" });
+        return;
+      }
       await audio.speak(requestedGuide, { interrupt: true });
     };
     void replay();
@@ -160,18 +173,22 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
   return (
     <main className="lessonScreen" data-testid="lesson-stage" data-stage={state.stage} data-reduced-motion={state.progress.settings.reducedMotion || undefined} style={{ backgroundImage: `url(${gardenBackground.src})` }}>
       <header className="lessonScreen__hud" data-layout="hud">
-        <p aria-label="いまの もじ">{entry.character}</p>
+        {state.stage === "soundMatch"
+          ? <span className="lessonScreen__hudSpacer" aria-hidden="true" />
+          : <p aria-label="いまの もじ">{entry.character}</p>}
         <button className="lessonScreen__speaker" type="button" aria-label="こえを もういちど きく" onClick={replayGuide}>
-          <img src={voiceBird.src} alt="こえのことり" width={voiceBird.width} height={voiceBird.height} />
+          <SpeakerIcon />
         </button>
-        <button className="lessonScreen__fullscreen" type="button" aria-label={isFullscreen ? "がめんを もどす" : "がめんを ひろげる"} onClick={toggleFullscreen}>⛶</button>
+        <button className="lessonScreen__home" type="button" aria-label="にわへ もどる" onClick={onReturnToGarden}>
+          <HomeIcon />
+        </button>
       </header>
       <p className="lessonScreen__guide" data-layout="guide">{guide}</p>
       <div className="lessonScreen__body">
         <section className="lessonScreen__material" data-layout="lesson">
           {state.stage === "intro" ? <PromptCard entry={entry} showCharacter emphasized /> : null}
           {state.stage === "shapeMatch" ? <PromptCard entry={entry} showCharacter emphasized={stageAttempts >= 2} /> : null}
-          {state.stage === "soundMatch" ? <PromptCard entry={entry} showCharacter={false} /> : null}
+          {state.stage === "soundMatch" ? <SoundPrompt onReplay={replayGuide} /> : null}
           {writing()}
           {state.stage === "reward" ? <RewardStep entry={entry} /> : null}
         </section>
@@ -181,7 +198,6 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
           {state.stage === "reward" ? <button className="lessonButton lessonButton--watering" type="button" onClick={() => dispatch({ type: "CONTINUE" })}>
             <img src={wateringCan.src} alt="" width={wateringCan.width} height={wateringCan.height} />じょうろで つぎへ
           </button> : null}
-          {onReturnToGarden ? <button className="lessonButton lessonButton--secondary" type="button" onClick={onReturnToGarden}>にわへ もどる</button> : null}
         </section>
       </div>
     </main>

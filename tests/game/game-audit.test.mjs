@@ -20,17 +20,23 @@ describe("完成版browser監査の固定scenario", () => {
     expect(backgroundImageUrl("none")).toBeNull();
   });
 
-  it("初回・書字・45/46解放の3 scenarioを機械読取できる", async () => {
+  it("初回・書字・行復習・45/46解放の4 scenarioを機械読取できる", async () => {
     const scenarios = await Promise.all([
       "first-kana.json",
       "writing.json",
+      "row-review-home.json",
       "word-unlock.json",
     ].map((name) => loadScenario(resolve(REPOSITORY_ROOT, "tests/game/scenarios", name))));
 
-    expect(scenarios.map((scenario) => scenario.id)).toEqual(["first-kana", "writing", "word-unlock"]);
+    expect(scenarios.map((scenario) => scenario.id)).toEqual(["first-kana", "writing", "row-review-home", "word-unlock"]);
     expect(scenarios[0].flow.some((step) => step.action === "clickWrongKana")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "clickButton" && step.name === "にわへ もどる")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.screen === "garden" && step.stage === "shapeMatch")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "completeSoundMatchIfAvailable")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.stage === "soundMatch")).toBe(false);
     expect(scenarios[1].flow.filter((step) => step.action === "drawAndContinue")).toHaveLength(4);
-    expect(scenarios[2].sessions).toHaveLength(2);
+    expect(scenarios[2].flow.some((step) => step.action === "clickButton" && step.name === "にわへ もどる")).toBe(true);
+    expect(scenarios[3].sessions).toHaveLength(2);
   });
 
   it("test-only保存fixtureは45文字と46文字の境界だけを変える", () => {
