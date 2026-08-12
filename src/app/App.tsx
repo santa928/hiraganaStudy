@@ -166,7 +166,7 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     kana: state.currentKana,
     stage: state.stage,
     promptHasIllustration: state.stage === "shapeMatch",
-    choices: state.stage === "shapeMatch" || state.stage === "soundMatch" ? createLessonChoices(entry.character) : [],
+    choices: state.stage === "shapeMatch" ? createLessonChoices(entry.character) : [],
     guideCount: state.progress.kana[state.currentKana].guideCount,
     wordsUnlocked: isWordGardenUnlocked(state.progress),
   });

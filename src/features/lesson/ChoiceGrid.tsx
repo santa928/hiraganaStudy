@@ -11,10 +11,10 @@ export interface ChoiceGridProps {
   readonly disabled?: boolean;
 }
 
-/** 絵や読み仮名を一切含めない、形・音合わせ共通の文字選択肢。 */
+/** 絵や読み仮名を一切含めない、形合わせ・行音復習共通の文字選択肢。 */
 export function ChoiceGrid({ choices, correct, guideCount, onChoose, successChoice, disabled = false }: ChoiceGridProps): React.JSX.Element {
   return (
-    <div className="choiceGrid" aria-label="もじを えらぶ">
+    <div className="choiceGrid" aria-label="もじを えらぶ" data-choice-count={choices.length}>
       {choices.map((choice) => {
         const guided = guideCount >= 2 && choice === correct;
         const successful = successChoice === choice;

@@ -29,8 +29,8 @@ export function createProgressFixture({ completedKanaCount = 0, currentKana = KA
     const reached = (targetStage) => completed || (isCurrent && currentStageIndex >= STAGES.indexOf(targetStage));
     return [character, {
       seen: completed || (isCurrent && stage !== "intro"),
-      shapeMatched: reached("soundMatch"),
-      soundMatched: reached("traceWide"),
+      shapeMatched: completed || (isCurrent && (stage === "soundMatch" || currentStageIndex >= STAGES.indexOf("traceWide"))),
+      soundMatched: completed,
       traceWideTried: reached("traceNarrow"),
       traceNarrowTried: reached("copyWithModel"),
       copyTried: reached("freeWrite"),
@@ -128,21 +128,6 @@ async function executeStep(page, step, sessionOutput, stateHistory) {
     const wrong = state.choices.find((choice) => choice !== step.correct);
     if (!wrong) throw new Error("誤答用の文字選択肢がありません");
     await page.getByRole("button", { name: `もじ ${wrong}`, exact: true }).click();
-  } else if (step.action === "completeSoundMatchIfAvailable") {
-    await page.waitForFunction(() => {
-      const raw = globalThis.render_game_to_text?.();
-      if (!raw) return false;
-      const stage = JSON.parse(raw).stage;
-      return stage === "soundMatch" || stage === "traceWide";
-    });
-    const state = await readGameState(page);
-    if (state.stage === "soundMatch") {
-      await waitForVisualAssets(page);
-      if (step.capture) await page.screenshot({ path: join(sessionOutput, `${step.capture}.png`), fullPage: false });
-      await page.getByRole("button", { name: `もじ ${step.character}`, exact: true }).click();
-    } else if (state.stage !== "traceWide") {
-      throw new Error(`音合わせの完了先が不正です: ${state.stage}`);
-    }
   } else if (step.action === "drawAndContinue") {
     await drawStroke(page);
     await page.getByRole("button", { name: "つぎへ", exact: true }).click();

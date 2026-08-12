@@ -23,10 +23,14 @@ export interface RowReviewScreenProps {
   readonly onReturnToGarden: () => void;
 }
 
-/** 行内の比較しやすい文字を固定順で三つ返す。 */
-export function createRowReviewChoices(character: KanaCharacter): readonly KanaCharacter[] {
+/** 行内の比較しやすい文字を返し、最初の音復習だけは二択にする。 */
+export function createRowReviewChoices(character: KanaCharacter, step: "shape" | "sound"): readonly KanaCharacter[] {
   const entry = findKana(character);
   const characters = KANA_ENTRIES.filter((candidate) => candidate.row === entry.row).map((candidate) => candidate.character);
+  if (entry.row === "a" && step === "sound") {
+    const firstDistractor = characters.find((candidate) => candidate !== character);
+    return firstDistractor ? [firstDistractor, character] : [character];
+  }
   if (characters.length === 3) return characters;
   const first = characters[0];
   const middle = characters[Math.floor(characters.length / 2)];
@@ -40,7 +44,7 @@ export function RowReviewScreen({ state, dispatch, audio, onReturnToGarden }: Ro
   const review = state.progress.rowReview;
   const step = review?.step ?? "shape";
   const isShape = step === "shape";
-  const choices = useMemo(() => createRowReviewChoices(entry.character), [entry.character]);
+  const choices = useMemo(() => createRowReviewChoices(entry.character, step), [entry.character, step]);
   const attempt = state.progress.lessonAttempt?.character === entry.character && state.progress.lessonAttempt.stage === state.stage
     ? state.progress.lessonAttempt.count
     : 0;
@@ -51,17 +55,29 @@ export function RowReviewScreen({ state, dispatch, audio, onReturnToGarden }: Ro
   const stageIdentity = `${entry.character}-${step}-${attempt}`;
   const mountedRef = useRef(true);
   const replayRequestRef = useRef(0);
+  const dispatchRef = useRef(dispatch);
   const stageIdentityRef = useRef(stageIdentity);
+  dispatchRef.current = dispatch;
   stageIdentityRef.current = stageIdentity;
   const background = getWorldIllustration("garden-background");
 
   useEffect(() => {
+    let active = true;
     replayRequestRef.current += 1;
     audio.cancel();
     if (!state.progress.settings.speech) return;
-    void audio.speak(guide.spoken, { interrupt: true });
-    return () => audio.cancel();
-  }, [audio, guide.spoken, state.progress.settings.speech]);
+    try {
+      void Promise.resolve(audio.speak(guide.spoken, { interrupt: true })).catch(() => {
+        if (active && !isShape) dispatchRef.current({ type: "SKIP_SOUND_MATCH" });
+      });
+    } catch {
+      if (!isShape) dispatchRef.current({ type: "SKIP_SOUND_MATCH" });
+    }
+    return () => {
+      active = false;
+      audio.cancel();
+    };
+  }, [audio, guide.spoken, isShape, state.progress.settings.speech]);
   useEffect(() => {
     if (isShape) return;
     if (state.progress.settings.speech && audio.getStatus() !== "visual-only") return;
@@ -85,15 +101,24 @@ export function RowReviewScreen({ state, dispatch, audio, onReturnToGarden }: Ro
         try {
           status = await audio.unlock();
         } catch {
+          if (!isShape && mountedRef.current && replayRequestRef.current === requestId && stageIdentityRef.current === requestedIdentity) {
+            dispatchRef.current({ type: "SKIP_SOUND_MATCH" });
+          }
           return;
         }
       }
       if (!mountedRef.current || replayRequestRef.current !== requestId || stageIdentityRef.current !== requestedIdentity) return;
       if (status === "visual-only") {
-        if (!isShape) dispatch({ type: "SKIP_SOUND_MATCH" });
+        if (!isShape) dispatchRef.current({ type: "SKIP_SOUND_MATCH" });
         return;
       }
-      await audio.speak(guide.spoken, { interrupt: true });
+      try {
+        await audio.speak(guide.spoken, { interrupt: true });
+      } catch {
+        if (!isShape && mountedRef.current && replayRequestRef.current === requestId && stageIdentityRef.current === requestedIdentity) {
+          dispatchRef.current({ type: "SKIP_SOUND_MATCH" });
+        }
+      }
     };
     void replay();
   };
@@ -112,7 +137,10 @@ export function RowReviewScreen({ state, dispatch, audio, onReturnToGarden }: Ro
       <p className="lessonScreen__guide">{guide.visible}</p>
       <section className="rowReviewScreen__body">
         {isShape ? <PromptCard entry={entry} showCharacter emphasized={attempt >= 2} /> : <SoundPrompt onReplay={replayGuide} />}
-        <ChoiceGrid choices={choices} correct={entry.character} guideCount={attempt} onChoose={answer} />
+        <div className="rowReviewScreen__actions">
+          <ChoiceGrid choices={choices} correct={entry.character} guideCount={attempt} onChoose={answer} />
+          {!isShape ? <button className="rowReviewScreen__skip" type="button" aria-label="こえの おさらいを とばす" onClick={() => dispatch({ type: "SKIP_SOUND_MATCH" })}>つぎへ <span aria-hidden="true">▶</span></button> : null}
+        </div>
       </section>
     </main>
   );

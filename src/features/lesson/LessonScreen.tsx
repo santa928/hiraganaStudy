@@ -9,7 +9,6 @@ import { lessonGuideCopy, type LessonGuideKey } from "./guideCopy";
 import { HomeIcon } from "./HomeIcon";
 import { PromptCard } from "./PromptCard";
 import { RewardStep } from "./RewardStep";
-import { SoundPrompt } from "./SoundPrompt";
 import { SpeakerIcon } from "./SpeakerIcon";
 import { SuccessBloom } from "./SuccessBloom";
 import { WritingStep } from "./WritingStep";
@@ -65,7 +64,7 @@ function awaitedIllustration(character: LearningState["currentKana"]): string {
   return getIllustration(findKana(character).illustrationKey).src;
 }
 
-/** 状態機械の8段階を、朝の庭の一画面一操作へ接続する。 */
+/** 一文字の導入・形合わせ・4書字・報酬を、朝の庭の一画面一操作へ接続する。 */
 export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onReturnToGarden, onCelebrate }: LessonScreenProps): React.JSX.Element {
   const entry = useMemo(() => findKana(state.currentKana), [state.currentKana]);
   const gardenBackground = getWorldIllustration("garden-background");
@@ -76,7 +75,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
   const pendingSuccessRef = useRef<PendingSuccess | null>(null);
   const [pendingSuccess, setPendingSuccess] = useState<PendingSuccess | null>(null);
   const choices = useMemo(() => createLessonChoices(entry.character), [entry.character]);
-  const isChoiceStage = state.stage === "shapeMatch" || state.stage === "soundMatch";
+  const isChoiceStage = state.stage === "shapeMatch";
   const stageIdentity = `${state.currentKana}-${state.stage}`;
   const visiblePendingSuccess = pendingSuccess?.stageIdentity === stageIdentity ? pendingSuccess : null;
   const stageAttempts = state.progress.lessonAttempt?.character === state.currentKana
@@ -86,8 +85,8 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
   const guideKey: LessonGuideKey = state.stage === "shapeMatch"
     ? stageAttempts >= 3 ? "shapeShow" : stageAttempts >= 1 ? "shapeAgain" : "shape"
     : state.stage === "soundMatch"
-      ? stageAttempts >= 3 ? "soundShow" : stageAttempts >= 1 ? "soundAgain" : "sound"
-      : state.stage;
+      ? "traceWide"
+    : state.stage;
   const guide = lessonGuideCopy(guideKey, entry);
   const stageIdentityRef = useRef(stageIdentity);
   const guideRef = useRef(guide.spoken);
@@ -123,13 +122,6 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
   }, [state.currentKana]);
 
   useEffect(() => {
-    if (state.stage !== "soundMatch") return;
-    if (speechEnabled && audio.getStatus() !== "visual-only") return;
-    audio.cancel();
-    dispatch({ type: "SKIP_SOUND_MATCH" });
-  }, [audio, dispatch, speechEnabled, state.stage]);
-
-  useEffect(() => {
     replayRequestRef.current += 1;
     audio.cancel();
     if (!speechEnabled) return;
@@ -155,7 +147,6 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
     if (!speechEnabled) return;
     const requestId = replayRequestRef.current + 1;
     const requestedStageIdentity = stageIdentity;
-    const requestedStage = state.stage;
     const requestedGuide = guide.spoken;
     replayRequestRef.current = requestId;
     audio.cancel();
@@ -174,10 +165,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
         || stageIdentityRef.current !== requestedStageIdentity
         || guideRef.current !== requestedGuide
       ) return;
-      if (status === "visual-only") {
-        if (requestedStage === "soundMatch") dispatch({ type: "SKIP_SOUND_MATCH" });
-        return;
-      }
+      if (status === "visual-only") return;
       await audio.speak(requestedGuide, { interrupt: true });
     };
     void replay();
@@ -185,9 +173,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
 
   const answer = (choice: LearningState["currentKana"]): void => {
     const correct = choice === entry.character;
-    const event: LessonEvent = state.stage === "shapeMatch"
-      ? { type: "ANSWER_SHAPE", correct }
-      : { type: "ANSWER_SOUND", correct };
+    const event: LessonEvent = { type: "ANSWER_SHAPE", correct };
     if (correct) beginSuccess(event, { kind: "choice", choice });
     else dispatch(event);
   };
@@ -204,9 +190,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
   return (
     <main className="lessonScreen" data-testid="lesson-stage" data-stage={state.stage} data-celebrating={visiblePendingSuccess ? "true" : undefined} data-reduced-motion={state.progress.settings.reducedMotion || undefined} style={{ backgroundImage: `url(${gardenBackground.src})` }}>
       <header className="lessonScreen__hud" data-layout="hud">
-        {state.stage === "soundMatch"
-          ? <span className="lessonScreen__hudSpacer" aria-hidden="true" />
-          : <p aria-label="いまの もじ">{entry.character}</p>}
+        <p aria-label="いまの もじ">{entry.character}</p>
         <button className="lessonScreen__speaker" type="button" aria-label="こえを もういちど きく" onClick={replayGuide}>
           <SpeakerIcon />
         </button>
@@ -219,7 +203,6 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
         <section className="lessonScreen__material" data-layout="lesson">
           {state.stage === "intro" ? <PromptCard entry={entry} showCharacter emphasized /> : null}
           {state.stage === "shapeMatch" ? <PromptCard entry={entry} showCharacter emphasized={stageAttempts >= 2} /> : null}
-          {state.stage === "soundMatch" ? <SoundPrompt onReplay={replayGuide} /> : null}
           {writing()}
           {state.stage === "reward" ? <RewardStep entry={entry} /> : null}
           {visiblePendingSuccess?.target.kind === "writing" ? <SuccessBloom character={entry.character} /> : null}

@@ -83,6 +83,30 @@ describe("repairProgress", () => {
     expect(repairProgress(raw).lessonAttempt).toBeNull();
   });
 
+  it("旧版で一文字の音問題にいた保存進捗は太いなぞりへ移行する", () => {
+    const repaired = repairProgress(resumableProgressAt("い", "soundMatch"));
+
+    expect(repaired).toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("い"),
+      stage: "traceWide",
+      rowReview: null,
+    });
+    expect(repaired.kana["い"].soundMatched).toBe(false);
+  });
+
+  it("行復習の音問題にいた保存進捗はそのまま保持する", () => {
+    const raw = {
+      ...resumableProgressAt("お", "soundMatch"),
+      rowReview: { row: "a", step: "sound" } as const,
+    };
+
+    expect(repairProgress(raw)).toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("お"),
+      stage: "soundMatch",
+      rowReview: { row: "a", step: "sound" },
+    });
+  });
+
   it("壊れた文字だけを初期化し、正常な文字進捗は保持する", () => {
     const raw = structuredClone(progressAt("く", "traceNarrow")) as {
       kana: Record<string, unknown>;

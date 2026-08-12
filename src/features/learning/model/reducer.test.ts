@@ -38,11 +38,12 @@ describe("学習状態機械", () => {
     expect(continued.stage).toBe("shapeMatch");
   });
 
-  it("正しい形合わせは形の体験を記録して音合わせへ進む", () => {
+  it("正しい形合わせは形の体験を記録して音問題を挟まず太いなぞりへ進む", () => {
     const result = reduceLesson(stateAt("か", "shapeMatch"), { type: "ANSWER_SHAPE", correct: true });
 
-    expect(result.stage).toBe("soundMatch");
+    expect(result.stage).toBe("traceWide");
     expect(result.progress.kana["か"].shapeMatched).toBe(true);
+    expect(result.progress.kana["か"].soundMatched).toBe(false);
   });
 
   it("形合わせの誤答は段階を保ち、3回目から正解案内を判定できる", () => {
@@ -65,35 +66,32 @@ describe("学習状態機械", () => {
     expect(second.progress.lessonAttempt).toEqual({ character: "か", stage: "shapeMatch", count: 2 });
   });
 
-  it("形合わせを完了すると試行回数を消し、音合わせは第1段階から始める", () => {
+  it("形合わせを完了すると試行回数を消して太いなぞりへ進む", () => {
     const first = reduceLesson(stateAt("か", "shapeMatch"), { type: "ANSWER_SHAPE", correct: false });
-    const sound = reduceLesson(first, { type: "ANSWER_SHAPE", correct: true });
-    const firstSoundWrong = reduceLesson(sound, { type: "ANSWER_SOUND", correct: false });
+    const writing = reduceLesson(first, { type: "ANSWER_SHAPE", correct: true });
 
-    expect(sound.progress.lessonAttempt).toBeNull();
-    expect(firstSoundWrong.progress.lessonAttempt).toEqual({ character: "か", stage: "soundMatch", count: 1 });
+    expect(writing.stage).toBe("traceWide");
+    expect(writing.progress.lessonAttempt).toBeNull();
   });
 
-  it("正しい音合わせは音の体験を記録して太いなぞりへ進む", () => {
-    const result = reduceLesson(stateAt("さ", "soundMatch"), { type: "ANSWER_SOUND", correct: true });
+  it("旧版で一文字の音問題にいた進捗は太いなぞりへ復旧する", () => {
+    const saved = progressAt("い", "soundMatch");
+    const resumed = reduceLesson(stateAt("あ", "intro"), { type: "RESUME", progress: saved });
 
-    expect(result.stage).toBe("traceWide");
-    expect(result.progress.kana["さ"].soundMatched).toBe(true);
+    expect(resumed.currentKana).toBe("い");
+    expect(resumed.stage).toBe("traceWide");
+    expect(resumed.progress.rowReview).toBeNull();
+    expect(resumed.progress.kana["い"].soundMatched).toBe(false);
   });
 
-  it("再生できない音合わせは音の達成を偽装せず太いなぞりへ進む", () => {
-    const result = reduceLesson(stateAt("さ", "soundMatch"), { type: "SKIP_SOUND_MATCH" });
-
-    expect(result.stage).toBe("traceWide");
-    expect(result.progress.kana["さ"].soundMatched).toBe(false);
-    expect(result.progress.lessonAttempt).toBeNull();
-  });
-
-  it("音合わせの誤答は段階を保ち、案内回数だけを増やす", () => {
-    const result = reduceLesson(stateAt("さ", "soundMatch"), { type: "ANSWER_SOUND", correct: false });
+  it("行復習の音を誤答しても段階を保ち、案内回数だけを増やす", () => {
+    const review = reduceLesson(stateAt("お", "reward"), { type: "CONTINUE" });
+    const sound = reduceLesson(review, { type: "ANSWER_SHAPE", correct: true });
+    const result = reduceLesson(sound, { type: "ANSWER_SOUND", correct: false });
 
     expect(result.stage).toBe("soundMatch");
-    expect(result.progress.kana["さ"].guideCount).toBe(1);
+    expect(result.progress.rowReview).toEqual({ row: "a", step: "sound" });
+    expect(result.progress.kana["お"].guideCount).toBe(1);
   });
 
   it("太いなぞりは太いなぞりの段階でのみ完了を記録する", () => {
@@ -168,6 +166,7 @@ describe("学習状態機械", () => {
     expect(next.currentKana).toBe("か");
     expect(next.stage).toBe("intro");
     expect(next.progress.kana["お"].completedOnce).toBe(true);
+    expect(next.progress.kana["お"].soundMatched).toBe(true);
   });
 
   it("行復習の音を再生できない時は音達成を変えず次の文字へ進む", () => {

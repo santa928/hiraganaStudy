@@ -276,6 +276,25 @@ describe("App", () => {
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ kana: expect.objectContaining({ い: expect.objectContaining({ seen: true }) }) })));
   });
 
+  it("旧版の一文字音問題から再起動しても、庭を経て太いなぞりから再開する", async () => {
+    const user = userEvent.setup();
+    const base = createInitialProgress();
+    const saved: LearningProgress = {
+      ...base,
+      currentKanaIndex: 1,
+      stage: "soundMatch",
+      kana: { ...base.kana, い: { ...base.kana.い, seen: true, shapeMatched: true } },
+    };
+    const { runtime } = createRuntime(() => Promise.resolve(saved));
+
+    render(<App runtime={runtime} />);
+    await user.click(await screen.findByRole("button", { name: "つづきを あそぶ" }));
+
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
+    expect(screen.getByRole("application", { name: "い を なぞろう" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "こえを きく" })).not.toBeInTheDocument();
+  });
+
   it("途中の行復習も再起動後はいったん庭を見せ、じょうろで同じstepを復元する", async () => {
     const user = userEvent.setup();
     const base = createInitialProgress();

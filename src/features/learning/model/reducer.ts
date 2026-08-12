@@ -173,6 +173,12 @@ function withNormalizedLessonAttempt(progress: LearningProgress): LearningProgre
   return { ...progress, lessonAttempt: normalizeLessonAttempt(progress) };
 }
 
+/** 旧版の一文字音問題だけを書字開始へ移し、行復習の音問題は保持する。 */
+function normalizeLegacySoundStage(progress: LearningProgress): LearningProgress {
+  if (progress.stage !== "soundMatch" || progress.rowReview !== null) return progress;
+  return { ...progress, stage: "traceWide", lessonAttempt: null };
+}
+
 /** 誤答と同時に、現在の選択問題だけの案内段階を一つ進める。 */
 function recordWrongAnswer(state: LearningState, stage: LessonAttempt["stage"]): LearningState {
   const currentAttempt = state.progress.lessonAttempt;
@@ -281,7 +287,7 @@ function getKanaRow(character: KanaCharacter): KanaEntry["row"] {
 export function reduceLesson(state: LearningState, event: LessonEvent): LearningState {
   if (event.type === "RESUME") {
     return stateFromProgress(isResumableProgress(event.progress)
-      ? withNormalizedLessonAttempt(event.progress)
+      ? withNormalizedLessonAttempt(normalizeLegacySoundStage(event.progress))
       : createInitialProgress());
   }
 
@@ -307,7 +313,7 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
       });
     }
 
-    return updateCurrentKana(state, (current) => ({ ...current, shapeMatched: true }), { stage: "soundMatch" });
+    return updateCurrentKana(state, (current) => ({ ...current, shapeMatched: true }), { stage: "traceWide" });
   }
 
   if (event.type === "ANSWER_SOUND" && state.stage === "soundMatch") {
@@ -316,7 +322,7 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
     }
 
     if (state.progress.rowReview?.step === "sound") {
-      return advanceAfterRowReview(updateCurrentKana(state, (current) => ({ ...current, completedOnce: true })));
+      return advanceAfterRowReview(updateCurrentKana(state, (current) => ({ ...current, soundMatched: true, completedOnce: true })));
     }
 
     return updateCurrentKana(state, (current) => ({ ...current, soundMatched: true }), { stage: "traceWide" });

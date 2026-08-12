@@ -120,15 +120,15 @@ describe("IndexedDbProgressRepository", () => {
     ));
     const repository = new IndexedDbProgressRepository(databaseName, { localStorage: storage });
 
-    await repository.save(resumableProgressAt("さ", "soundMatch"));
+    await repository.save(resumableProgressAt("さ", "traceWide"));
 
     expect(await readPrimaryRecord(databaseName)).toMatchObject({
       revision: 1,
-      progress: { currentKanaIndex: KANA_ORDER.indexOf("さ"), stage: "soundMatch" },
+      progress: { currentKanaIndex: KANA_ORDER.indexOf("さ"), stage: "traceWide" },
     });
     await expect(new IndexedDbProgressRepository(databaseName, { localStorage: storage }).load()).resolves.toMatchObject({
       currentKanaIndex: KANA_ORDER.indexOf("さ"),
-      stage: "soundMatch",
+      stage: "traceWide",
     });
   });
 
@@ -143,15 +143,15 @@ describe("IndexedDbProgressRepository", () => {
     )));
     const repository = new IndexedDbProgressRepository(databaseName, { indexedDb: null, localStorage: storage });
 
-    await repository.save(resumableProgressAt("さ", "soundMatch"));
+    await repository.save(resumableProgressAt("さ", "traceWide"));
 
     expect(JSON.parse(storage.getItem(FALLBACK_PROGRESS_STORAGE_KEY) ?? "null")).toMatchObject({
       revision: 1,
-      progress: { currentKanaIndex: KANA_ORDER.indexOf("さ"), stage: "soundMatch" },
+      progress: { currentKanaIndex: KANA_ORDER.indexOf("さ"), stage: "traceWide" },
     });
     await expect(new IndexedDbProgressRepository(databaseName, { indexedDb: null, localStorage: storage }).load()).resolves.toMatchObject({
       currentKanaIndex: KANA_ORDER.indexOf("さ"),
-      stage: "soundMatch",
+      stage: "traceWide",
     });
   });
 
@@ -160,13 +160,13 @@ describe("IndexedDbProgressRepository", () => {
     const storage = new MapStorage();
     await writePrimaryRecord(databaseName, envelope(8, 100, "primary", resumableProgressAt("く", "traceNarrow")));
     storage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(
-      envelope(8, 200, "fallback", resumableProgressAt("さ", "soundMatch")),
+      envelope(8, 200, "fallback", resumableProgressAt("さ", "traceWide")),
     ));
     const repository = new IndexedDbProgressRepository(databaseName, { localStorage: storage });
 
     await expect(repository.load()).resolves.toMatchObject({
       currentKanaIndex: KANA_ORDER.indexOf("さ"),
-      stage: "soundMatch",
+      stage: "traceWide",
     });
     expect(repository.storageDegraded).toBe(true);
   });
@@ -190,7 +190,7 @@ describe("IndexedDbProgressRepository", () => {
 
     await Promise.all([
       primaryWriter.save(resumableProgressAt("く", "traceNarrow")),
-      fallbackWriter.save(resumableProgressAt("さ", "soundMatch")),
+      fallbackWriter.save(resumableProgressAt("さ", "traceWide")),
     ]);
 
     const primaryEnvelope = JSON.parse(primaryDraftStorage.getItem(FALLBACK_PROGRESS_STORAGE_KEY) ?? "null") as ProgressEnvelope;
@@ -204,7 +204,7 @@ describe("IndexedDbProgressRepository", () => {
 
     await expect(reader.load()).resolves.toMatchObject({
       currentKanaIndex: KANA_ORDER.indexOf("さ"),
-      stage: "soundMatch",
+      stage: "traceWide",
     });
     expect(reader.storageDegraded).toBe(true);
   });
@@ -227,12 +227,12 @@ describe("IndexedDbProgressRepository", () => {
       localStorage: storage,
       now: () => 200,
       createWriteId: () => "b-high",
-    }).save(resumableProgressAt("さ", "soundMatch"));
+    }).save(resumableProgressAt("さ", "traceWide"));
     delayedPrimary.failSecondOpen();
     await lowSave;
 
     expect(JSON.parse(storage.getItem(FALLBACK_PROGRESS_STORAGE_KEY) ?? "null")).toMatchObject({
-      progress: { currentKanaIndex: KANA_ORDER.indexOf("さ"), stage: "soundMatch" },
+      progress: { currentKanaIndex: KANA_ORDER.indexOf("さ"), stage: "traceWide" },
     });
   });
 
@@ -253,13 +253,13 @@ describe("IndexedDbProgressRepository", () => {
       localStorage: storage,
       now: () => 200,
       createWriteId: () => "b-high",
-    }).save(resumableProgressAt("さ", "soundMatch"));
+    }).save(resumableProgressAt("さ", "traceWide"));
     await delayedPrimary.succeedSecondOpen();
     await lowSave;
 
     await expect(new IndexedDbProgressRepository(databaseName, { localStorage: storage }).load()).resolves.toMatchObject({
       currentKanaIndex: KANA_ORDER.indexOf("さ"),
-      stage: "soundMatch",
+      stage: "traceWide",
     });
   });
 
@@ -268,7 +268,7 @@ describe("IndexedDbProgressRepository", () => {
     const storage = new MapStorage();
     await writePrimaryRecord(databaseName, envelope(8, 200, "primary", resumableProgressAt("く", "traceNarrow")));
     storage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(
-      envelope(8, 100, "fallback", resumableProgressAt("さ", "soundMatch")),
+      envelope(8, 100, "fallback", resumableProgressAt("さ", "traceWide")),
     ));
     const repository = new IndexedDbProgressRepository(databaseName, { localStorage: storage });
 
@@ -284,12 +284,12 @@ describe("IndexedDbProgressRepository", () => {
     const storage = new MapStorage();
     await writePrimaryRecord(databaseName, envelope(8, 100, "a-primary", resumableProgressAt("く", "traceNarrow")));
     storage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(
-      envelope(8, 100, "z-fallback", resumableProgressAt("さ", "soundMatch")),
+      envelope(8, 100, "z-fallback", resumableProgressAt("さ", "traceWide")),
     ));
 
     await expect(new IndexedDbProgressRepository(databaseName, { localStorage: storage }).load()).resolves.toMatchObject({
       currentKanaIndex: KANA_ORDER.indexOf("さ"),
-      stage: "soundMatch",
+      stage: "traceWide",
     });
   });
 
@@ -297,7 +297,7 @@ describe("IndexedDbProgressRepository", () => {
     const databaseName = testDatabaseName();
     const storage = new MapStorage();
     const oldProgress = resumableProgressAt("く", "traceNarrow");
-    const fallbackProgress = resumableProgressAt("さ", "soundMatch");
+    const fallbackProgress = resumableProgressAt("さ", "traceWide");
     const finalProgress = resumableProgressAt("た", "traceWide");
 
     await new IndexedDbProgressRepository(databaseName, { localStorage: storage }).save(oldProgress);
@@ -309,7 +309,7 @@ describe("IndexedDbProgressRepository", () => {
     const fallbackWinner = new IndexedDbProgressRepository(databaseName, { localStorage: storage });
     await expect(fallbackWinner.load()).resolves.toMatchObject({
       currentKanaIndex: KANA_ORDER.indexOf("さ"),
-      stage: "soundMatch",
+      stage: "traceWide",
     });
     expect(fallbackWinner.storageDegraded).toBe(true);
 
@@ -345,7 +345,7 @@ describe("IndexedDbProgressRepository", () => {
     const databaseName = testDatabaseName();
     const repository = new IndexedDbProgressRepository(databaseName);
     await repository.save(resumableProgressAt("く", "traceNarrow"));
-    localStorage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(resumableProgressAt("さ", "soundMatch")));
+    localStorage.setItem(FALLBACK_PROGRESS_STORAGE_KEY, JSON.stringify(resumableProgressAt("さ", "traceWide")));
 
     await repository.reset();
 

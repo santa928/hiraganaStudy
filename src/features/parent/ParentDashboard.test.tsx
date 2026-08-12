@@ -141,6 +141,13 @@ describe("ParentDashboard", () => {
     expect(onReset).toHaveBeenCalledOnce();
   });
 
+  it("任意の行音復習を全文字の達成項目として表示しない", () => {
+    render(<ParentDashboard progress={createInitialProgress()} environment={environment} onSettingsChange={vi.fn()} onReset={vi.fn().mockResolvedValue(undefined)} onClose={vi.fn()} />);
+
+    expect(screen.queryByRole("columnheader", { name: "ぎょうの おと" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "おと" })).not.toBeInTheDocument();
+  });
+
   it("reset失敗では進捗を保持し、実行中の二重確認を防ぐ", async () => {
     const user = userEvent.setup();
     let rejectReset: ((error: Error) => void) | undefined;

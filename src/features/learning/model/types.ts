@@ -45,7 +45,7 @@ export interface RowReviewProgress {
   readonly step: "shape" | "sound";
 }
 
-/** 現在の形・音合わせでだけ使う、画面をまたいで続く案内段階。 */
+/** 一文字の形合わせと、行末の任意音復習でだけ使う案内段階。 */
 export interface LessonAttempt {
   readonly character: KanaCharacter;
   readonly stage: "shapeMatch" | "soundMatch";

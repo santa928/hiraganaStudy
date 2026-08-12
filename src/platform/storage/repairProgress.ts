@@ -144,6 +144,12 @@ export function repairProgress(raw: unknown): LearningProgress {
   const positionChanged = currentKanaIndex !== normalizedIndex;
   const normalizedStage = allCompleted ? "reward" : positionChanged ? initial.stage : stage;
   const currentKana = KANA_ORDER[normalizedIndex] ?? KANA_ORDER[0];
+  const repairedRowReview = !allCompleted && hasValidCurrentKanaIndex && !positionChanged
+    ? repairRowReview(raw.rowReview, currentKana, normalizedStage)
+    : null;
+  const repairedStage = normalizedStage === "soundMatch" && repairedRowReview === null
+    ? "traceWide"
+    : normalizedStage;
   const repairedWords: Record<string, WordProgress> = {};
   let hasIncompleteWord = false;
   for (const entry of WORD_ENTRIES) {
@@ -157,11 +163,9 @@ export function repairProgress(raw: unknown): LearningProgress {
   return {
     schemaVersion: 1,
     currentKanaIndex: normalizedIndex,
-    stage: normalizedStage,
-    rowReview: !allCompleted && hasValidCurrentKanaIndex && !positionChanged
-      ? repairRowReview(raw.rowReview, currentKana, normalizedStage)
-      : null,
-    lessonAttempt: repairLessonAttempt(raw.lessonAttempt, currentKana, normalizedStage),
+    stage: repairedStage,
+    rowReview: repairedRowReview,
+    lessonAttempt: repairLessonAttempt(raw.lessonAttempt, currentKana, repairedStage),
     kana,
     words: allCompleted ? repairedWords : initial.words,
     settings: repairSettings(raw.settings, initial.settings),

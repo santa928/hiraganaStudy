@@ -49,8 +49,32 @@ describe("RowReviewScreen", () => {
     expect(screen.getAllByRole("button", { name: /^もじ / }).map((button) => button.textContent)).toEqual(["や", "ゆ", "よ"]);
   });
 
-  it("わ行も3文字だけを候補にし、行外の文字を混ぜない", () => {
-    expect(createRowReviewChoices("ん")).toEqual(["わ", "を", "ん"]);
+  it("あ行の音復習は正解を含む2択から始め、形復習は3択を保つ", () => {
+    expect(createRowReviewChoices("お", "sound")).toEqual(["あ", "お"]);
+    expect(createRowReviewChoices("お", "sound")).toContain("お");
+    expect(createRowReviewChoices("お", "shape")).toHaveLength(3);
+  });
+
+  it("か行以後の音復習と、3文字だけのわ行は決定的な3択にする", () => {
+    expect(createRowReviewChoices("こ", "sound")).toHaveLength(3);
+    expect(createRowReviewChoices("ん", "sound")).toEqual(["わ", "を", "ん"]);
+  });
+
+  it("音復習は正解しなくても、つぎへから任意に飛ばせる", async () => {
+    const dispatch = vi.fn();
+    render(<RowReviewScreen state={reviewState("お", "a", "sound")} dispatch={dispatch} audio={audio} onReturnToGarden={returnToGarden} />);
+
+    expect(screen.getAllByRole("button", { name: /^もじ / })).toHaveLength(2);
+    expect(screen.getByLabelText("もじを えらぶ")).toHaveAttribute("data-choice-count", "2");
+    await userEvent.click(screen.getByRole("button", { name: "こえの おさらいを とばす" }));
+
+    expect(dispatch).toHaveBeenCalledWith({ type: "SKIP_SOUND_MATCH" });
+  });
+
+  it("形復習には音復習のskipを出さない", () => {
+    render(<RowReviewScreen state={reviewState("お", "a", "shape")} dispatch={vi.fn()} audio={audio} onReturnToGarden={returnToGarden} />);
+
+    expect(screen.queryByRole("button", { name: "こえの おさらいを とばす" })).not.toBeInTheDocument();
   });
 
   it("音復習も画面から正解語を隠し、関連語は読み上げだけに残す", () => {
@@ -104,6 +128,35 @@ describe("RowReviewScreen", () => {
     render(<RowReviewScreen state={reviewState("よ", "ya", "sound")} dispatch={dispatch} audio={lockedAudio} onReturnToGarden={returnToGarden} />);
 
     await userEvent.click(screen.getByRole("button", { name: "こえを きく" }));
+
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "SKIP_SOUND_MATCH" }));
+  });
+
+  it("音声のunlockが失敗した音復習も停止せずskipする", async () => {
+    const dispatch = vi.fn();
+    const failingAudio: AudioGuide = {
+      unlock: vi.fn().mockRejectedValue(new Error("voice unavailable")),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "locked",
+    };
+    render(<RowReviewScreen state={reviewState("よ", "ya", "sound")} dispatch={dispatch} audio={failingAudio} onReturnToGarden={returnToGarden} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "こえを きく" }));
+
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "SKIP_SOUND_MATCH" }));
+  });
+
+  it("音声の読み上げが失敗した音復習も停止せずskipする", async () => {
+    const dispatch = vi.fn();
+    const failingAudio: AudioGuide = {
+      unlock: vi.fn().mockResolvedValue("ready"),
+      speak: vi.fn().mockRejectedValue(new Error("speech failed")),
+      cancel: vi.fn(),
+      getStatus: () => "ready",
+    };
+
+    render(<RowReviewScreen state={reviewState("よ", "ya", "sound")} dispatch={dispatch} audio={failingAudio} onReturnToGarden={returnToGarden} />);
 
     await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "SKIP_SOUND_MATCH" }));
   });

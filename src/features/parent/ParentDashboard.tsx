@@ -24,7 +24,7 @@ export interface ParentDashboardProps {
 
 const LEAVES = ["left", "center", "right"] as const;
 const STATUS_FIELDS = [
-  ["seen", "みた"], ["shapeMatched", "かたち"], ["soundMatched", "おと"], ["traceWideTried", "ふとい なぞり"], ["traceNarrowTried", "ほそい なぞり"], ["copyTried", "おてほん"], ["freeWriteTried", "じぶんで かく"], ["completedOnce", "さいた"],
+  ["seen", "みた"], ["shapeMatched", "かたち"], ["traceWideTried", "ふとい なぞり"], ["traceNarrowTried", "ほそい なぞり"], ["copyTried", "おてほん"], ["freeWriteTried", "じぶんで かく"], ["completedOnce", "さいた"],
 ] as const satisfies ReadonlyArray<readonly [keyof LearningProgress["kana"][typeof KANA_ENTRIES[number]["character"]], string]>;
 
 /** 生の端末statusを、保護者に読める日本語へ変換する。 */

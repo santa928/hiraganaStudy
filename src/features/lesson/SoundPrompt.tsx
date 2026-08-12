@@ -1,6 +1,6 @@
 import { SpeakerIcon } from "./SpeakerIcon";
 
-/** 画像名称を推測させず、再生操作だけを大きく示す音合わせカード。 */
+/** 行を一通り習った後の任意復習で、再生操作だけを大きく示すカード。 */
 export function SoundPrompt({ onReplay }: { readonly onReplay: () => void }): React.JSX.Element {
   return (
     <button className="soundPrompt" type="button" aria-label="こえを きく" onClick={onReplay}>

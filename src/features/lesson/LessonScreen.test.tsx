@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
 
 import { renderLesson } from "../../test/renderLesson";
@@ -48,36 +48,6 @@ describe("LessonScreen", () => {
     expect(screen.getByTestId("prompt-illustration")).toBeVisible();
   });
 
-  it("音合わせは曖昧な画像を出さず、音声操作と文字だけを選べる", () => {
-    renderLesson({ currentKana: "い", stage: "soundMatch", audioStatus: "ready" });
-
-    expect(screen.queryByLabelText("いまの もじ")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("prompt-character")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("prompt-illustration")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "こえを きく" })).toBeVisible();
-    expect(screen.getAllByRole("button", { name: /もじ/ })).toHaveLength(3);
-  });
-
-  it("音合わせは画面へ正解語を出さず、意味を分けた指示と関連語つき音声を使う", () => {
-    const audio: AudioGuide = {
-      unlock: vi.fn().mockResolvedValue("ready"),
-      speak: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn(),
-      getStatus: () => "ready",
-    };
-
-    renderLesson({ currentKana: "あ", stage: "soundMatch", audio });
-
-    const guide = document.querySelector(".lessonScreen__guide");
-    expect(guide).toHaveTextContent("こえを きいて おなじ もじを さがそう");
-    expect(guide?.textContent).toBe("こえを きいて\nおなじ もじを さがそう");
-    expect(guide).not.toHaveTextContent("あひるの あ");
-    expect(audio.speak).toHaveBeenCalledWith(
-      "あひるの あ。こえを きいて、おなじ もじを さがそう",
-      { interrupt: true },
-    );
-  });
-
   it("右上の再生操作は用途不明な鳥画像ではなくスピーカー記号にする", () => {
     renderLesson({ currentKana: "あ", stage: "intro" });
     const replay = screen.getByRole("button", { name: "こえを もういちど きく" });
@@ -95,33 +65,6 @@ describe("LessonScreen", () => {
     expect(home.querySelector("svg")).toBeInTheDocument();
     fireEvent.click(home);
     expect(onReturnToGarden).toHaveBeenCalledOnce();
-  });
-
-  it.each([
-    ["端末に音声がない", { audioStatus: "visual-only" as const, speechEnabled: true }],
-    ["保護者が音声を切った", { audioStatus: "ready" as const, speechEnabled: false }],
-  ])("%s時は成立しない音合わせを表示せず太いなぞりへ進む", async (_description, settings) => {
-    const onCelebrate = vi.fn();
-    renderLesson({ currentKana: "い", stage: "soundMatch", ...settings, onCelebrate });
-
-    await waitFor(() => expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide"));
-    expect(screen.queryByRole("button", { name: "もじ い" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    expect(onCelebrate).not.toHaveBeenCalled();
-  });
-
-  it("再生操作で端末音声なしと判明した時も音合わせを抜ける", async () => {
-    const audio: AudioGuide = {
-      unlock: vi.fn().mockResolvedValue("visual-only"),
-      speak: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn(),
-      getStatus: () => "locked",
-    };
-    renderLesson({ currentKana: "い", stage: "soundMatch", audio });
-
-    fireEvent.click(screen.getByRole("button", { name: "こえを きく" }));
-
-    await waitFor(() => expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide"));
   });
 
   it("書字は一筆後だけ続ける操作を有効にし、自由書字はskipで進める", () => {
@@ -153,7 +96,8 @@ describe("LessonScreen", () => {
     expect(screen.getByRole("button", { name: "もじ あ" })).toHaveAttribute("data-guided", "true");
     fireEvent.click(screen.getByRole("button", { name: "もじ あ" }));
     act(() => vi.advanceTimersByTime(560));
-    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "soundMatch");
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
+    expect(screen.getByRole("application", { name: "あ を なぞろう" })).toBeVisible();
   });
 
   it("形の正解をその場で560ms祝い、一度だけ次段階へ進める", () => {
@@ -174,21 +118,8 @@ describe("LessonScreen", () => {
     act(() => vi.advanceTimersByTime(559));
     expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "shapeMatch");
     act(() => vi.advanceTimersByTime(1));
-    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "soundMatch");
-  });
-
-  it("音の正解も同じ成功演出を経て太いなぞりへ進める", () => {
-    vi.useFakeTimers();
-    const onCelebrate = vi.fn();
-    renderLesson({ currentKana: "あ", stage: "soundMatch", audioStatus: "ready", onCelebrate });
-
-    fireEvent.click(screen.getByRole("button", { name: "もじ あ" }));
-
-    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "soundMatch");
-    expect(screen.getByRole("status")).toHaveTextContent("できたね");
-    expect(onCelebrate).toHaveBeenCalledOnce();
-    act(() => vi.advanceTimersByTime(560));
     expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
+    expect(screen.queryByRole("button", { name: "こえを きく" })).not.toBeInTheDocument();
   });
 
   it("成功予約中に外部から段階が変わったら古い演出と遷移を破棄する", () => {
@@ -227,7 +158,7 @@ describe("LessonScreen", () => {
     expect(positions).toEqual(new Set([0, 1, 2]));
   });
 
-  it("形合わせの累計3回案内後も、音合わせは最初の案内から始める", () => {
+  it("形合わせの累計案内を終えても音問題を挟まず書字へ進む", () => {
     vi.useFakeTimers();
     renderLesson({ currentKana: "あ", stage: "shapeMatch" });
     const chooseWrong = (): void => {
@@ -239,8 +170,8 @@ describe("LessonScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "もじ あ" }));
     act(() => vi.advanceTimersByTime(560));
 
-    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "soundMatch");
-    expect(screen.getByRole("button", { name: "もじ あ" })).not.toHaveAttribute("data-guided", "true");
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
+    expect(screen.queryByRole("button", { name: "もじ あ" })).not.toBeInTheDocument();
   });
 
   it("書字段階は現在の操作に合う案内を画面へ出す", () => {
@@ -330,7 +261,7 @@ describe("LessonScreen", () => {
     vi.mocked(audio.speak).mockClear();
 
     fireEvent.click(screen.getByRole("button", { name: "こえを もういちど きく" }));
-    rerender({ currentKana: "あ", stage: "soundMatch", audio });
+    rerender({ currentKana: "あ", stage: "traceWide", audio });
     await act(async () => {
       resolveUnlock?.("ready");
       await Promise.resolve();

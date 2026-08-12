@@ -41,6 +41,14 @@ function isOutside(child, parent, tolerance) {
     || child.bottom > parent.bottom + tolerance;
 }
 
+/** 2矩形が許容誤差を超えて重なるかを返す。 */
+function overlaps(first, second, tolerance = 0.5) {
+  return first.left < second.right - tolerance
+    && first.right > second.left + tolerance
+    && first.top < second.bottom - tolerance
+    && first.bottom > second.top + tolerance;
+}
+
 /** 書字開始後のpaintだけを抽出し、idle時間を遅延へ混ぜずに集計する。 */
 export function analyzeWritingSamples(raw) {
   const firstPointerTime = raw.pointerTimes[0] ?? Number.POSITIVE_INFINITY;
@@ -194,6 +202,96 @@ async function openAuditPage(page, url, id) {
   await page.getByTestId("app-loading").waitFor({ state: "detached", timeout: 10_000 }).catch(() => undefined);
 }
 
+/** 行を覚えた後だけ出す音復習の二択・skip・案内札を実測する。 */
+async function measureRowReviewSound(browser, options, viewport, errors) {
+  const context = await browser.newContext({ viewport, serviceWorkers: "block" });
+  const page = await context.newPage();
+  page.on("console", (message) => { if (message.type() === "error") errors.push(`${viewport.name}-row-sound: console: ${message.text()}`); });
+  page.on("pageerror", (error) => errors.push(`${viewport.name}-row-sound: pageerror: ${String(error)}`));
+  const progress = createProgressFixture({ completedKanaCount: 4, currentKana: "お", stage: "soundMatch", rowReview: { row: "a", step: "sound" } });
+  await seedProgress(page, { ...progress, settings: { ...progress.settings, speech: true } }, `row-sound-${viewport.name}`);
+  await openAuditPage(page, options.url, `row-sound-${viewport.name}`);
+  await page.getByRole("button", { name: "つづきを あそぶ", exact: true }).click();
+  await page.locator('[data-testid="row-review"][data-step="sound"]').waitFor({ state: "visible" });
+  await waitForVisualAssets(page);
+
+  const metrics = await page.evaluate(() => {
+    const toRect = (element) => {
+      const value = element.getBoundingClientRect();
+      return { left: value.left, top: value.top, right: value.right, bottom: value.bottom, width: value.width, height: value.height };
+    };
+    const required = (selector) => {
+      const element = document.querySelector(selector);
+      if (!(element instanceof HTMLElement)) throw new Error(`行音復習の対象がありません: ${selector}`);
+      return element;
+    };
+    const root = required(".rowReviewScreen");
+    const guide = required(".lessonScreen__guide");
+    const body = required(".rowReviewScreen__body");
+    const actions = required(".rowReviewScreen__actions");
+    const prompt = required(".soundPrompt");
+    const choiceGrid = required(".choiceGrid");
+    const skip = required(".rowReviewScreen__skip");
+    const choices = [...root.querySelectorAll('.choiceGrid__choice[aria-label^="もじ "]')];
+    const guideStyle = getComputedStyle(guide);
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      text: guide.textContent,
+      rect: toRect(guide),
+      rootRect: toRect(root),
+      bodyTop: body.getBoundingClientRect().top,
+      bodyRect: toRect(body),
+      promptRect: toRect(prompt),
+      actionsRect: toRect(actions),
+      choiceGridRect: toRect(choiceGrid),
+      skipRect: toRect(skip),
+      choiceRects: choices.map(toRect),
+      choiceLabels: choices.map((choice) => choice.getAttribute("aria-label")),
+      style: {
+        backgroundColor: guideStyle.backgroundColor,
+        color: guideStyle.color,
+        paddingBlockStart: Number.parseFloat(guideStyle.paddingBlockStart),
+        paddingBlockEnd: Number.parseFloat(guideStyle.paddingBlockEnd),
+        lineHeight: Number.parseFloat(guideStyle.lineHeight),
+        fontSize: Number.parseFloat(guideStyle.fontSize),
+      },
+    };
+  });
+  const viewportRect = { left: 0, top: 0, right: metrics.viewport.width, bottom: metrics.viewport.height };
+  const issues = [];
+  if (metrics.text !== "こえを きいて\nおなじ もじを さがそう") issues.push(`行音復習の画面案内が不正: ${JSON.stringify(metrics.text)}`);
+  if (metrics.text.includes("おにぎり") || metrics.text.includes("おにぎりの お")) issues.push("行音復習の画面に正解語が露出");
+  if (metrics.choiceLabels.length !== 2 || !metrics.choiceLabels.includes("もじ お")) issues.push(`あ行の音復習が正解を含む2択でない: ${metrics.choiceLabels.join(",")}`);
+  if (isOutside(metrics.rect, metrics.rootRect, 0.5)) issues.push("行音復習の案内札がviewport外");
+  if (metrics.bodyTop - metrics.rect.bottom < 8 - 0.5) issues.push(`行音復習の案内と教材のgap不足: ${rounded(metrics.bodyTop - metrics.rect.bottom)}px`);
+  for (const [name, rect] of [["教材", metrics.promptRect], ["操作領域", metrics.actionsRect]]) {
+    if (isOutside(rect, metrics.bodyRect, 0.5)) issues.push(`行音復習の${name}が教材領域外`);
+    if (isOutside(rect, viewportRect, 0.5)) issues.push(`行音復習の${name}がviewport外`);
+  }
+  if (overlaps(metrics.promptRect, metrics.actionsRect)) issues.push("行音復習の教材と操作領域が重なる");
+  if (isOutside(metrics.choiceGridRect, metrics.actionsRect, 0.5)) issues.push("行音復習の選択肢領域が操作領域外");
+  if (overlaps(metrics.choiceGridRect, metrics.skipRect)) issues.push("行音復習の選択肢とskipが重なる");
+  for (const [index, choiceRect] of metrics.choiceRects.entries()) {
+    if (isOutside(choiceRect, metrics.choiceGridRect, 0.5)) issues.push(`行音復習の選択肢${index + 1}が選択肢領域外`);
+    if (isOutside(choiceRect, viewportRect, 0.5)) issues.push(`行音復習の選択肢${index + 1}がviewport外`);
+    if (choiceRect.width < 64 || choiceRect.height < 64) issues.push(`行音復習の選択肢${index + 1}が64px未満: ${rounded(choiceRect.width)}x${rounded(choiceRect.height)}`);
+  }
+  if (isOutside(metrics.skipRect, metrics.actionsRect, 0.5)) issues.push("行音復習のskipが操作領域外");
+  if (isOutside(metrics.skipRect, viewportRect, 0.5)) issues.push("行音復習のskipがviewport外");
+  if (metrics.skipRect.width < 64 || metrics.skipRect.height < 64) issues.push(`行音復習のskipが64px未満: ${rounded(metrics.skipRect.width)}x${rounded(metrics.skipRect.height)}`);
+  if (metrics.promptRect.width < 64 || metrics.promptRect.height < 64) issues.push(`行音復習の音声教材が64px未満: ${rounded(metrics.promptRect.width)}x${rounded(metrics.promptRect.height)}`);
+  issues.push(...findGuideReadabilityIssues(metrics.style).map((issue) => `行音復習: ${issue}`));
+  await page.screenshot({ path: join(options.outputDirectory, `${viewport.name}-sound.png`), fullPage: false });
+  await page.getByRole("button", { name: "こえの おさらいを とばす" }).click();
+  await page.getByTestId("garden-screen").waitFor({ state: "visible" });
+  const afterSkip = await page.evaluate(() => JSON.parse(globalThis.render_game_to_text?.() ?? "{}"));
+  if (afterSkip.screen !== "garden" || afterSkip.kana !== "か" || afterSkip.stage !== "intro") {
+    issues.push(`行音復習のskip後が次の文字の庭でない: ${JSON.stringify(afterSkip)}`);
+  }
+  await context.close();
+  return { metrics: { ...metrics, afterSkip }, issues };
+}
+
 /** 形合わせ画面のDOM境界・画像readiness・配置関係を採取する。 */
 async function measureViewport(browser, options, viewport, errors) {
   const context = await browser.newContext({ viewport, serviceWorkers: "block" });
@@ -318,45 +416,9 @@ async function measureViewport(browser, options, viewport, errors) {
   });
   issues.push(...findSuccessOverlayIssues(success));
   await page.screenshot({ path: join(options.outputDirectory, `${viewport.name}-success.png`), fullPage: false });
-  await page.waitForFunction(() => {
-    const stage = document.querySelector('[data-testid="lesson-stage"]');
-    return stage instanceof HTMLElement && stage.dataset.stage === "soundMatch";
-  });
-  const soundGuide = await page.evaluate(() => {
-    const root = document.querySelector(".lessonScreen");
-    const guide = document.querySelector(".lessonScreen__guide");
-    const body = document.querySelector(".lessonScreen__body");
-    if (!(root instanceof HTMLElement) || !(guide instanceof HTMLElement) || !(body instanceof HTMLElement)) {
-      throw new Error("音問題の案内境界がありません");
-    }
-    const toRect = (element) => {
-      const value = element.getBoundingClientRect();
-      return { left: value.left, top: value.top, right: value.right, bottom: value.bottom, width: value.width, height: value.height };
-    };
-    const style = getComputedStyle(guide);
-    return {
-      text: guide.textContent,
-      rect: toRect(guide),
-      rootRect: toRect(root),
-      bodyTop: body.getBoundingClientRect().top,
-      style: {
-        backgroundColor: style.backgroundColor,
-        color: style.color,
-        paddingBlockStart: Number.parseFloat(style.paddingBlockStart),
-        paddingBlockEnd: Number.parseFloat(style.paddingBlockEnd),
-        lineHeight: Number.parseFloat(style.lineHeight),
-        fontSize: Number.parseFloat(style.fontSize),
-      },
-    };
-  });
-  if (soundGuide.text !== "こえを きいて\nおなじ もじを さがそう") issues.push(`音問題の画面案内が不正: ${JSON.stringify(soundGuide.text)}`);
-  if (soundGuide.text.includes("あひる") || soundGuide.text.includes("あひるの あ")) issues.push("音問題の画面に正解語が露出");
-  if (isOutside(soundGuide.rect, soundGuide.rootRect, 0.5)) issues.push("音問題の案内札がviewport外");
-  if (soundGuide.bodyTop - soundGuide.rect.bottom < 8 - 0.5) issues.push(`音問題の案内と教材のgap不足: ${rounded(soundGuide.bodyTop - soundGuide.rect.bottom)}px`);
-  issues.push(...findGuideReadabilityIssues(soundGuide.style).map((issue) => `音問題: ${issue}`));
-  await page.screenshot({ path: join(options.outputDirectory, `${viewport.name}-sound.png`), fullPage: false });
   await context.close();
-  return { name: viewport.name, metrics: { ...metrics, success, soundGuide }, issues };
+  const rowSound = await measureRowReviewSound(browser, options, viewport, errors);
+  return { name: viewport.name, metrics: { ...metrics, success, soundGuide: rowSound.metrics }, issues: [...issues, ...rowSound.issues] };
 }
 
 /** 書字中のpaint間隔とpointer-to-paint遅延をDocker内の参考値として測る。 */

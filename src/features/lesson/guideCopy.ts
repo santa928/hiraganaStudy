@@ -1,7 +1,7 @@
 import { kanaAssociationLabel } from "../learning/content/kana";
 import type { KanaEntry } from "../learning/content/types";
 
-/** 一文字レッスンで表示・読み上げを選ぶ固定の案内段階。 */
+/** 一文字レッスンと行復習で表示・読み上げを選ぶ固定の案内段階。 */
 export type LessonGuideKey =
   | "intro"
   | "shape"
@@ -28,7 +28,7 @@ function sharedGuide(message: string): GuideCopy {
 }
 
 /**
- * 一文字レッスンの画面文と読み上げ文を返す。
+ * 一文字レッスンと行復習の画面文・読み上げ文を返す。
  *
  * 音問題だけは画面から関連語と対象文字を隠し、正解根拠を音声へ限定する。
  */

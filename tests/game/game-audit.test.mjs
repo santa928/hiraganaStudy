@@ -32,9 +32,10 @@ describe("完成版browser監査の固定scenario", () => {
     expect(scenarios[0].flow.some((step) => step.action === "clickWrongKana")).toBe(true);
     expect(scenarios[0].flow.some((step) => step.action === "clickButton" && step.name === "にわへ もどる")).toBe(true);
     expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.screen === "garden" && step.stage === "shapeMatch")).toBe(true);
-    expect(scenarios[0].flow.some((step) => step.action === "completeSoundMatchIfAvailable")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "completeSoundMatchIfAvailable")).toBe(false);
     expect(scenarios[0].flow.some((step) => step.action === "expectSuccess" && step.capture === "shape-success")).toBe(true);
     expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.stage === "soundMatch")).toBe(false);
+    expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.stage === "traceWide")).toBe(true);
     expect(scenarios[1].flow.filter((step) => step.action === "drawAndContinue")).toHaveLength(4);
     expect(scenarios[1].flow.some((step) => step.action === "expectSuccess" && step.capture === "writing-success")).toBe(true);
     expect(scenarios[2].flow.some((step) => step.action === "clickButton" && step.name === "にわへ もどる")).toBe(true);
@@ -49,6 +50,15 @@ describe("完成版browser監査の固定scenario", () => {
     expect(locked.kana.ん.completedOnce).toBe(false);
     expect(Object.values(unlocked.kana).filter((entry) => entry.completedOnce)).toHaveLength(46);
     expect(Object.keys(unlocked.words)).toHaveLength(60);
+  });
+
+  it("一文字の書字fixtureは形だけを既習にし、行の音復習は未達成で作る", () => {
+    const writing = createProgressFixture({ completedKanaCount: 0, currentKana: "あ", stage: "traceWide" });
+    const rowSound = createProgressFixture({ completedKanaCount: 4, currentKana: "お", stage: "soundMatch", rowReview: { row: "a", step: "sound" } });
+
+    expect(writing.kana.あ).toMatchObject({ shapeMatched: true, soundMatched: false });
+    expect(rowSound.kana.お).toMatchObject({ shapeMatched: true, soundMatched: false });
+    expect(rowSound.rowReview).toEqual({ row: "a", step: "sound" });
   });
 
   it("親境界・8px gap・48px touch targetの違反を対象名付きで返す", () => {
