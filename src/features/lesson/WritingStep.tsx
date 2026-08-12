@@ -9,12 +9,12 @@ export interface WritingStepProps {
   readonly character: KanaCharacter;
   readonly mode: WritingMode;
   readonly onComplete: () => void;
-  readonly onSkip?: () => void;
+  readonly onDefer: () => void;
   readonly celebrating?: boolean;
 }
 
-/** 一筆を確定するまで主要CTAを待機し、自由書字だけは明示skipを提供する。 */
-export function WritingStep({ character, mode, onComplete, onSkip, celebrating = false }: WritingStepProps): React.JSX.Element {
+/** 一筆を確定するまで次段階を待機し、全書字段階から読み本線へ戻れるようにする。 */
+export function WritingStep({ character, mode, onComplete, onDefer, celebrating = false }: WritingStepProps): React.JSX.Element {
   const [hasStroke, setHasStroke] = useState(false);
   const [isModelVisible, setIsModelVisible] = useState(false);
   const template = loadStrokeTemplate(character);
@@ -48,7 +48,7 @@ export function WritingStep({ character, mode, onComplete, onSkip, celebrating =
         />
       </div>
       <div className="writingStep__actions">
-        {isFree && onSkip ? <button className="lessonButton lessonButton--secondary" type="button" disabled={celebrating} onClick={onSkip}>あとで かく</button> : null}
+        <button className="lessonButton lessonButton--secondary lessonButton--defer" data-layout="writing-defer" type="button" disabled={celebrating} onClick={onDefer}>あとで</button>
         <button className="lessonButton" type="button" disabled={!hasStroke || celebrating} onClick={onComplete}>つぎへ</button>
       </div>
     </section>

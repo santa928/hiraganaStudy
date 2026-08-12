@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { KANA_ENTRIES } from "../learning/content/kana";
-import type { LearningProgress, LearningSettings } from "../learning/model/types";
+import type { LearningMode, LearningProgress, LearningSettings } from "../learning/model/types";
 import type { AudioGuideStatus } from "../../platform/audio/AudioGuide";
 import "./ParentDashboard.css";
 
@@ -24,7 +24,7 @@ export interface ParentDashboardProps {
 
 const LEAVES = ["left", "center", "right"] as const;
 const STATUS_FIELDS = [
-  ["seen", "みた"], ["shapeMatched", "かたち"], ["traceWideTried", "ふとい なぞり"], ["traceNarrowTried", "ほそい なぞり"], ["copyTried", "おてほん"], ["freeWriteTried", "じぶんで かく"], ["readCompleted", "さいた"],
+  ["seen", "みた"], ["shapeMatched", "かたち"], ["traceWideTried", "ふとい なぞり"], ["traceNarrowTried", "ほそい なぞり"], ["copyTried", "おてほん"], ["freeWriteTried", "じぶんで かく"], ["readCompleted", "よめた"], ["writingCompleted", "かいた"],
 ] as const satisfies ReadonlyArray<readonly [keyof LearningProgress["kana"][typeof KANA_ENTRIES[number]["character"]], string]>;
 
 type ToggleSettingKey = Exclude<keyof LearningSettings, "learningMode">;
@@ -51,6 +51,7 @@ export function ParentDashboard({ progress, environment, onSettingsChange, onRes
   }, []);
   const settings = progress.settings;
   const changeSetting = (key: ToggleSettingKey): void => onSettingsChange({ ...settings, [key]: !settings[key] });
+  const changeLearningMode = (learningMode: LearningMode): void => onSettingsChange({ ...settings, learningMode });
   const touchLeaf = (leaf: typeof LEAVES[number]): void => {
     setResetError(null);
     setLeafIndex((current) => LEAVES[current] === leaf ? current + 1 : 0);
@@ -76,6 +77,10 @@ export function ParentDashboard({ progress, environment, onSettingsChange, onRes
         return <tr key={entry.character}><th>{entry.character}</th>{STATUS_FIELDS.map(([field]) => <td key={field}>{item[field] ? "✓" : "—"}</td>)}<td>{item.guideCount}</td></tr>;
       })}</tbody></table></div>
     </section>
+    <section className="parentDashboard__learning"><h2>まなびかた</h2><fieldset className="parentDashboard__learningModes" role="radiogroup" aria-label="まなびかた">
+      <label className="parentDashboard__learningMode"><input type="radio" name="learning-mode" value="reading" checked={settings.learningMode === "reading"} onChange={() => changeLearningMode("reading")} /><span><strong>よむ（おすすめ）</strong><small>まずは もじを みて おぼえる</small></span></label>
+      <label className="parentDashboard__learningMode"><input type="radio" name="learning-mode" value="readingWriting" checked={settings.learningMode === "readingWriting"} onChange={() => changeLearningMode("readingWriting")} /><span><strong>よむ・かく</strong><small>よんだあと ゆびで かく</small></span></label>
+    </fieldset></section>
     <section><h2>おとと うごき</h2>{([ ["speech", "こえ"], ["music", "おんがく"], ["effects", "こうかおん"], ["reducedMotion", "うごきを へらす"] ] as const).map(([key, label]) => <label className="parentDashboard__setting" key={key}><input type="checkbox" aria-label={label} checked={settings[key]} onChange={() => changeSetting(key)} />{label}</label>)}</section>
     <section><h2>この たんまつ</h2><p>音声: {audioStatusLabel(environment.audioStatus)}</p><p>保存: {environment.storage === "normal" ? "通常" : "代替"}</p><p>表示: {displayModeLabel(environment.displayMode)}</p><p>PWA: {environment.pwaStatus}</p></section>
     <section className="parentDashboard__reset"><h2>はじめからに する</h2><p>{leafIndex === 0 ? "ひだりの はから さわってね" : leafIndex === 1 ? "まんなかの はを さわってね" : leafIndex === 2 ? "みぎの はを さわってね" : "さいごに かくにんしてね"}</p><div>{LEAVES.map((leaf) => <button type="button" className="parentDashboard__leaf" key={leaf} aria-label={`${leaf === "left" ? "ひだり" : leaf === "center" ? "まんなか" : "みぎ"}の は`} onClick={() => touchLeaf(leaf)}><span aria-hidden="true" /></button>)}</div>{leafIndex === LEAVES.length ? <button type="button" disabled={resetting} onClick={reset}>ほんとうに はじめからにする</button> : null}{resetError ? <p role="alert">{resetError}</p> : null}</section>

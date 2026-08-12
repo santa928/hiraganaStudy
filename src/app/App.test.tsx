@@ -273,7 +273,7 @@ describe("App", () => {
     render(<App runtime={runtime} />);
 
     await user.click(await screen.findByRole("button", { name: "つづきを あそぶ" }));
-    await user.click(screen.getByRole("button", { name: "じょうろで つぎへ" }));
+    await user.click(screen.getByRole("button", { name: "かいてみよう" }));
 
     expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
     expect(screen.queryByTestId("garden-screen")).not.toBeInTheDocument();
@@ -332,7 +332,7 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("button", { name: "あ を もういちど" }));
     expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "freeWrite");
-    await user.click(screen.getByRole("button", { name: "あとで かく" }));
+    await user.click(screen.getByRole("button", { name: "あとで" }));
 
     expect(await screen.findByTestId("garden-screen")).toBeVisible();
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
@@ -466,6 +466,54 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "こうかおん" }));
     await waitFor(() => expect(effects.applySettings).toHaveBeenLastCalledWith(expect.objectContaining({ effects: false })));
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ settings: expect.objectContaining({ effects: false }) })));
+  });
+
+  it("書字途中でよむへ切り替えても部分実績を残し、次の読みに進める", async () => {
+    const user = userEvent.setup();
+    const base = createInitialProgress();
+    const saved: LearningProgress = {
+      ...base,
+      stage: "traceNarrow",
+      settings: { ...base.settings, learningMode: "readingWriting" },
+      kana: {
+        ...base.kana,
+        あ: {
+          ...base.kana.あ,
+          seen: true,
+          shapeMatched: true,
+          readCompleted: true,
+          traceWideTried: true,
+        },
+      },
+    };
+    const { runtime, save } = createRuntime(() => Promise.resolve(saved));
+    render(<App runtime={runtime} />);
+
+    const gate = await screen.findByRole("button", { name: "おとなの せってい" });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(gate, { pointerId: 1 });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    fireEvent.pointerUp(gate, { pointerId: 1 });
+    vi.useRealTimers();
+    await user.click(screen.getByRole("radio", { name: /よむ（おすすめ）/ }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      currentKanaIndex: 1,
+      stage: "intro",
+      settings: expect.objectContaining({ learningMode: "reading" }),
+      kana: expect.objectContaining({
+        あ: expect.objectContaining({
+          readCompleted: true,
+          traceWideTried: true,
+          traceNarrowTried: false,
+          writingCompleted: false,
+        }),
+      }),
+    })));
+    await user.click(screen.getByRole("button", { name: "にわへ もどる" }));
+    await user.click(screen.getByRole("button", { name: "つづきを あそぶ" }));
+    expect(screen.getByLabelText("いまの もじ")).toHaveTextContent("い");
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
   });
 
   it("保護者resetは進行中saveの完了後に実行し、古い進捗を書き戻さない", async () => {

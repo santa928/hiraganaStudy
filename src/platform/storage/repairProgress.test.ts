@@ -18,7 +18,8 @@ function resumableProgressAt(character: (typeof KANA_ORDER)[number], stage: Retu
 function legacyV1ProgressAt(character: (typeof KANA_ORDER)[number], stage: ReturnType<typeof progressAt>["stage"]) {
   const current = resumableProgressAt(character, stage);
   const settings = current.settings as typeof current.settings & { readonly learningMode?: unknown };
-  const { learningMode: _learningMode, ...legacySettings } = settings;
+  const { learningMode: omittedLearningMode, ...legacySettings } = settings;
+  void omittedLearningMode;
 
   return {
     ...current,
@@ -29,7 +30,9 @@ function legacyV1ProgressAt(character: (typeof KANA_ORDER)[number], stage: Retur
         readonly writingCompleted?: boolean;
         readonly completedOnce?: boolean;
       };
-      const { readCompleted: _readCompleted, writingCompleted: _writingCompleted, ...legacy } = progress;
+      const { readCompleted: omittedReadCompleted, writingCompleted: omittedWritingCompleted, ...legacy } = progress;
+      void omittedReadCompleted;
+      void omittedWritingCompleted;
       return [candidate, {
         ...legacy,
         completedOnce: progress.readCompleted ?? progress.completedOnce ?? false,

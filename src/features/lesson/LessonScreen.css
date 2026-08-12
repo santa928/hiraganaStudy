@@ -54,18 +54,21 @@
 .lessonButton { display: inline-flex; min-block-size: var(--touch-target-primary); align-items: center; justify-content: center; gap: 10px; border: 4px solid var(--color-ink-indigo); border-radius: 28px; background: var(--color-grass); color: #fff; cursor: pointer; font-weight: 800; font-size: clamp(1.15rem, 4vw, 1.5rem); padding: 8px 22px; }
 .lessonButton::after { inline-size: 0; block-size: 0; border-block: 9px solid transparent; border-inline-start: 13px solid currentcolor; content: ""; }
 .lessonButton:disabled { cursor: default; filter: saturate(.3); opacity: .65; }
-.lessonButton--secondary { min-block-size: var(--touch-target-secondary); background: var(--color-paper-cream); color: var(--color-ink-indigo); font-size: 1rem; }
-.lessonButton--secondary::after { inline-size: 16px; block-size: 12px; border-radius: 100% 0 100% 0; border: 2px solid currentcolor; border-inline-start-width: 4px; transform: rotate(-25deg); }
+.lessonButton--secondary { background: var(--color-paper-cream); color: var(--color-ink-indigo); font-size: 1rem; }
+.lessonButton--defer::after { inline-size: 0; block-size: 0; border-block: 8px solid transparent; border-inline-start: 12px solid currentcolor; border-radius: 0; transform: none; }
 .writingStep { display: grid; gap: 12px; padding: clamp(12px, 3vw, 24px); }
 .writingStep[data-celebrating="true"] { border-color: var(--color-success); box-shadow: 0 7px 0 rgb(35 51 95 / 18%), 0 0 0 7px rgb(92 174 101 / 42%); }
 .writingStep__canvas { min-block-size: min(48dvh, 360px); }
 .writingStep__model { margin: 0; color: var(--color-ink-indigo); font-family: var(--font-kana); font-size: clamp(3rem, 12vw, 5.5rem); line-height: 1; text-align: center; }
 .writingStep__smallModel { justify-self: center; min-inline-size: var(--touch-target-secondary); min-block-size: var(--touch-target-secondary); border: 2px solid var(--color-ink-indigo); border-radius: 50%; background: #fffefa; color: var(--color-ink-indigo); font-family: var(--font-kana); font-size: 1.8rem; }
 .writingStep__smallModel:empty::before { display: block; inline-size: 22px; block-size: 14px; border: 3px solid currentcolor; border-radius: 100% 0 100% 0; content: ""; transform: rotate(-30deg); }
-.writingStep__actions { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.writingStep__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .rewardStep { display: grid; justify-items: center; gap: 12px; padding: clamp(16px, 5vw, 34px); }
 .rewardStep__flower { display: grid; inline-size: clamp(150px, 48vw, 260px); aspect-ratio: 1; place-items: center; border-radius: 50% 50% 45% 55%; background: #f4cc71; box-shadow: 0 0 0 18px #f7a6ab, 0 0 0 32px #f5d878; }
 .rewardStep__flower span { color: var(--color-ink-indigo); font-family: var(--font-kana); font-size: clamp(5rem, 22vw, 10rem); font-weight: 800; line-height: 1; }
+.rewardStep__flower { position: relative; }
+.rewardStep__flower .rewardStep__pencil { position: absolute; inset-block-start: -4%; inset-inline-end: -4%; display: grid; inline-size: 30%; aspect-ratio: 1; place-items: center; border: 3px solid var(--color-ink-indigo); border-radius: 50%; background: #fff3bf; box-shadow: 0 3px 0 rgb(35 51 95 / 20%); }
+.rewardStep__pencil svg { inline-size: 68%; block-size: 68%; fill: none; stroke: currentcolor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
 .rewardStep__illustration { inline-size: min(44vw, 190px); block-size: auto; }
 .lessonButton--watering img { inline-size: 44px; block-size: 44px; object-fit: contain; }
 

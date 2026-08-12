@@ -4,6 +4,7 @@ import type { AudioGuide } from "../../platform/audio/AudioGuide";
 import { getIllustration, getWorldIllustration } from "../learning/content/assetCatalog";
 import { KANA_ORDER, findKana } from "../learning/content/kana";
 import type { LearningState, LessonEvent } from "../learning/model/types";
+import { firstIncompleteWritingStage } from "../learning/model/writingProgress";
 import { ChoiceGrid } from "./ChoiceGrid";
 import { lessonGuideCopy, type LessonGuideKey } from "./guideCopy";
 import { HomeIcon } from "./HomeIcon";
@@ -82,6 +83,11 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
     && state.progress.lessonAttempt.stage === state.stage
     ? state.progress.lessonAttempt.count
     : 0;
+  const currentProgress = state.progress.kana[state.currentKana];
+  const offersWriting = state.progress.settings.learningMode === "readingWriting"
+    && currentProgress.readCompleted
+    && !currentProgress.writingCompleted
+    && firstIncompleteWritingStage(currentProgress) !== null;
   const guideKey: LessonGuideKey = state.stage === "shapeMatch"
     ? stageAttempts >= 3 ? "shapeShow" : stageAttempts >= 1 ? "shapeAgain" : "shape"
     : state.stage === "soundMatch"
@@ -180,10 +186,10 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
 
   const writing = (): React.JSX.Element | null => {
     const celebrating = visiblePendingSuccess?.target.kind === "writing";
-    if (state.stage === "traceWide") return <WritingStep key={`${entry.character}-traceWide`} character={entry.character} mode="traceWide" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_TRACE", width: "wide" }, { kind: "writing" })} />;
-    if (state.stage === "traceNarrow") return <WritingStep key={`${entry.character}-traceNarrow`} character={entry.character} mode="traceNarrow" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_TRACE", width: "narrow" }, { kind: "writing" })} />;
-    if (state.stage === "copyWithModel") return <WritingStep key={`${entry.character}-copyWithModel`} character={entry.character} mode="copyWithModel" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_COPY" }, { kind: "writing" })} />;
-    if (state.stage === "freeWrite") return <WritingStep key={`${entry.character}-freeWrite`} character={entry.character} mode="freeWrite" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_FREE_WRITE" }, { kind: "writing" })} onSkip={() => dispatch({ type: "SKIP_FREE_WRITE" })} />;
+    if (state.stage === "traceWide") return <WritingStep key={`${entry.character}-traceWide`} character={entry.character} mode="traceWide" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_TRACE", width: "wide" }, { kind: "writing" })} onDefer={() => dispatch({ type: "DEFER_WRITING" })} />;
+    if (state.stage === "traceNarrow") return <WritingStep key={`${entry.character}-traceNarrow`} character={entry.character} mode="traceNarrow" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_TRACE", width: "narrow" }, { kind: "writing" })} onDefer={() => dispatch({ type: "DEFER_WRITING" })} />;
+    if (state.stage === "copyWithModel") return <WritingStep key={`${entry.character}-copyWithModel`} character={entry.character} mode="copyWithModel" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_COPY" }, { kind: "writing" })} onDefer={() => dispatch({ type: "DEFER_WRITING" })} />;
+    if (state.stage === "freeWrite") return <WritingStep key={`${entry.character}-freeWrite`} character={entry.character} mode="freeWrite" celebrating={celebrating} onComplete={() => beginSuccess({ type: "COMPLETE_FREE_WRITE" }, { kind: "writing" })} onDefer={() => dispatch({ type: "DEFER_WRITING" })} />;
     return null;
   };
 
@@ -204,14 +210,14 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
           {state.stage === "intro" ? <PromptCard entry={entry} showCharacter emphasized /> : null}
           {state.stage === "shapeMatch" ? <PromptCard entry={entry} showCharacter emphasized={stageAttempts >= 2} /> : null}
           {writing()}
-          {state.stage === "reward" ? <RewardStep entry={entry} /> : null}
+          {state.stage === "reward" ? <RewardStep entry={entry} writingCompleted={currentProgress.writingCompleted} /> : null}
           {visiblePendingSuccess?.target.kind === "writing" ? <SuccessBloom character={entry.character} /> : null}
         </section>
         <section className="lessonScreen__actions" data-layout="actions">
           {state.stage === "intro" ? <button className="lessonButton" type="button" onClick={() => dispatch({ type: "CONTINUE" })}>はじめる</button> : null}
           {isChoiceStage ? <ChoiceGrid choices={choices} correct={entry.character} guideCount={stageAttempts} successChoice={visiblePendingSuccess?.target.kind === "choice" ? visiblePendingSuccess.target.choice : undefined} disabled={visiblePendingSuccess !== null} onChoose={answer} /> : null}
-          {state.stage === "reward" ? <button className="lessonButton lessonButton--watering" type="button" onClick={() => dispatch({ type: "CONTINUE" })}>
-            <img src={wateringCan.src} alt="" width={wateringCan.width} height={wateringCan.height} />じょうろで つぎへ
+          {state.stage === "reward" ? <button className={`lessonButton${offersWriting ? "" : " lessonButton--watering"}`} type="button" onClick={() => dispatch({ type: "CONTINUE" })}>
+            {offersWriting ? null : <img src={wateringCan.src} alt="" width={wateringCan.width} height={wateringCan.height} />}{offersWriting ? "かいてみよう" : "じょうろで つぎへ"}
           </button> : null}
         </section>
       </div>

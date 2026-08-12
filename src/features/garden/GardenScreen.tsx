@@ -47,7 +47,7 @@ export function GardenScreen({ progress, resumeRoute, onContinue, onReview, onOp
         {ROWS.map((row) => (
           <div className="gardenScreen__row" key={row} aria-label={`${row} の はなだん`}>
             {KANA_ENTRIES.filter((entry) => entry.row === row).map((entry) => (
-              <KanaFlower key={entry.character} entry={entry} completed={progress.kana[entry.character].readCompleted} onReview={onReview} />
+              <KanaFlower key={entry.character} entry={entry} completed={progress.kana[entry.character].readCompleted} writingCompleted={progress.kana[entry.character].writingCompleted} onReview={onReview} />
             ))}
           </div>
         ))}

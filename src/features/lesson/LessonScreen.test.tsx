@@ -67,7 +67,7 @@ describe("LessonScreen", () => {
     expect(onReturnToGarden).toHaveBeenCalledOnce();
   });
 
-  it("書字は一筆後だけ続ける操作を有効にし、自由書字はskipで進める", () => {
+  it("書字は一筆後だけ続ける操作を有効にし、あとでは祝いを重ねず次の読みに進む", () => {
     const onCelebrate = vi.fn();
     const { rerender } = renderLesson({ currentKana: "あ", stage: "traceWide" });
 
@@ -77,13 +77,49 @@ describe("LessonScreen", () => {
     expect(screen.getByRole("button", { name: "つぎへ" })).toBeEnabled();
 
     rerender({ currentKana: "あ", stage: "freeWrite", onCelebrate });
-    fireEvent.click(screen.getByRole("button", { name: "あとで かく" }));
-    expect(screen.getByTestId("reward-step")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "あとで" }));
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(onCelebrate).not.toHaveBeenCalled();
   });
 
-  it("3回目の案内では正解候補を示し、正解選択で進める", () => {
+  it.each(["traceWide", "traceNarrow", "copyWithModel", "freeWrite"] as const)(
+    "%sには64px主要操作として計測できるあとでを置く",
+    (stage) => {
+      renderLesson({ currentKana: "あ", stage, readCompleted: true, learningMode: "readingWriting" });
+
+      const defer = screen.getByRole("button", { name: "あとで" });
+      expect(defer).toHaveAttribute("data-layout", "writing-defer");
+      fireEvent.click(defer);
+      expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
+    },
+  );
+
+  it("読み書きモードの読み花は書字案内、読みモードと書字完了花は次の読みを案内する", () => {
+    const { rerender } = renderLesson({
+      currentKana: "あ",
+      stage: "reward",
+      learningMode: "readingWriting",
+      readCompleted: true,
+    });
+
+    expect(screen.getByRole("button", { name: "かいてみよう" })).toBeVisible();
+
+    rerender({ currentKana: "あ", stage: "reward", learningMode: "reading", readCompleted: true });
+    expect(screen.getByRole("button", { name: "じょうろで つぎへ" })).toBeVisible();
+
+    rerender({
+      currentKana: "あ",
+      stage: "reward",
+      learningMode: "readingWriting",
+      readCompleted: true,
+      writingCompleted: true,
+    });
+    expect(screen.getByRole("button", { name: "じょうろで つぎへ" })).toBeVisible();
+    expect(screen.getByTestId("reward-step").querySelector("[data-pencil-badge]")).toBeInTheDocument();
+  });
+
+  it("3回目の案内では正解候補を示し、正解選択で読みの花へ進める", () => {
     vi.useFakeTimers();
     renderLesson({ currentKana: "あ", stage: "shapeMatch" });
     const choices = screen.getAllByRole("button", { name: /もじ/ });
@@ -96,11 +132,11 @@ describe("LessonScreen", () => {
     expect(screen.getByRole("button", { name: "もじ あ" })).toHaveAttribute("data-guided", "true");
     fireEvent.click(screen.getByRole("button", { name: "もじ あ" }));
     act(() => vi.advanceTimersByTime(560));
-    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
-    expect(screen.getByRole("application", { name: "あ を なぞろう" })).toBeVisible();
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "reward");
+    expect(screen.getByTestId("reward-step")).toBeVisible();
   });
 
-  it("形の正解をその場で560ms祝い、一度だけ次段階へ進める", () => {
+  it("形の正解をその場で560ms祝い、一度だけ読みの花へ進める", () => {
     vi.useFakeTimers();
     const onCelebrate = vi.fn();
     renderLesson({ currentKana: "あ", stage: "shapeMatch", onCelebrate });
@@ -118,7 +154,7 @@ describe("LessonScreen", () => {
     act(() => vi.advanceTimersByTime(559));
     expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "shapeMatch");
     act(() => vi.advanceTimersByTime(1));
-    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "reward");
     expect(screen.queryByRole("button", { name: "こえを きく" })).not.toBeInTheDocument();
   });
 
@@ -158,7 +194,7 @@ describe("LessonScreen", () => {
     expect(positions).toEqual(new Set([0, 1, 2]));
   });
 
-  it("形合わせの累計案内を終えても音問題を挟まず書字へ進む", () => {
+  it("形合わせの累計案内を終えても音問題を挟まず読みの花へ進む", () => {
     vi.useFakeTimers();
     renderLesson({ currentKana: "あ", stage: "shapeMatch" });
     const chooseWrong = (): void => {
@@ -170,7 +206,7 @@ describe("LessonScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "もじ あ" }));
     act(() => vi.advanceTimersByTime(560));
 
-    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "reward");
     expect(screen.queryByRole("button", { name: "もじ あ" })).not.toBeInTheDocument();
   });
 

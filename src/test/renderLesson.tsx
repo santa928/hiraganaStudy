@@ -3,7 +3,7 @@ import { render } from "@testing-library/react";
 import { LessonScreen } from "../features/lesson/LessonScreen";
 import { KANA_ORDER } from "../features/learning/content/kana";
 import { createInitialProgress, reduceLesson } from "../features/learning/model/reducer";
-import type { LearningState, LessonStage } from "../features/learning/model/types";
+import type { LearningMode, LearningState, LessonStage } from "../features/learning/model/types";
 import type { AudioGuide, AudioGuideStatus } from "../platform/audio/AudioGuide";
 
 /** renderLessonへ指定できる、文字・段階とテスト用音声状態。 */
@@ -12,6 +12,10 @@ export interface RenderLessonOptions {
   readonly stage: LessonStage;
   readonly audioStatus?: AudioGuideStatus;
   readonly reducedMotion?: boolean;
+  readonly learningMode?: LearningMode;
+  readonly readCompleted?: boolean;
+  readonly writingCompleted?: boolean;
+  readonly traceWideTried?: boolean;
   readonly speechEnabled?: boolean;
   readonly audio?: AudioGuide;
   readonly onReturnToGarden?: () => void;
@@ -34,10 +38,27 @@ export function renderLesson(options: RenderLessonOptions): { rerender: (next: R
     const currentKanaIndex = KANA_ORDER.indexOf(next.currentKana);
     const kana = {
       ...progress.kana,
-      [next.currentKana]: { ...progress.kana[next.currentKana], seen: next.stage !== "intro" },
+      [next.currentKana]: {
+        ...progress.kana[next.currentKana],
+        seen: next.stage !== "intro",
+        readCompleted: next.readCompleted ?? false,
+        writingCompleted: next.writingCompleted ?? false,
+        traceWideTried: next.traceWideTried ?? false,
+      },
     };
     return {
-      progress: { ...progress, currentKanaIndex, stage: next.stage, kana, settings: { ...progress.settings, speech: next.speechEnabled ?? true, reducedMotion: next.reducedMotion ?? false } },
+      progress: {
+        ...progress,
+        currentKanaIndex,
+        stage: next.stage,
+        kana,
+        settings: {
+          ...progress.settings,
+          learningMode: next.learningMode ?? progress.settings.learningMode,
+          speech: next.speechEnabled ?? true,
+          reducedMotion: next.reducedMotion ?? false,
+        },
+      },
       currentKana: next.currentKana,
       stage: next.stage,
     };

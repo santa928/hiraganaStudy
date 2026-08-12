@@ -122,6 +122,23 @@ describe("ParentGate", () => {
 });
 
 describe("ParentDashboard", () => {
+  it("保護者が端末全体の学び方を2択のradioから変更できる", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    render(<ParentDashboard progress={createInitialProgress()} environment={environment} onSettingsChange={onSettingsChange} onReset={vi.fn().mockResolvedValue(undefined)} onClose={vi.fn()} />);
+
+    expect(screen.getByRole("radiogroup", { name: "まなびかた" })).toBeVisible();
+    expect(screen.getByRole("radio", { name: /よむ（おすすめ）/ })).toBeChecked();
+    expect(screen.getByText("まずは もじを みて おぼえる")).toBeVisible();
+    expect(screen.getByText("よんだあと ゆびで かく")).toBeVisible();
+
+    await user.click(screen.getByRole("radio", { name: /よむ・かく/ }));
+
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ learningMode: "readingWriting" }));
+    expect(screen.getByRole("columnheader", { name: "よめた" })).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "かいた" })).toBeVisible();
+  });
+
   it("設定を通知し、葉の順序と最終確認の後だけresetを実行する", async () => {
     const user = userEvent.setup();
     const onSettingsChange = vi.fn();

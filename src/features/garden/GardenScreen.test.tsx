@@ -10,7 +10,7 @@ describe("GardenScreen", () => {
     const progress = createInitialProgress();
     const completed = {
       ...progress,
-      kana: { ...progress.kana, あ: { ...progress.kana.あ, completedOnce: true } },
+      kana: { ...progress.kana, あ: { ...progress.kana.あ, readCompleted: true } },
     };
     const onContinue = vi.fn();
     const onReview = vi.fn();
@@ -27,7 +27,7 @@ describe("GardenScreen", () => {
   it("完成花の画像が読めなくても文字花を残して再試行できる", async () => {
     const user = userEvent.setup();
     const progress = createInitialProgress();
-    const completed = { ...progress, kana: { ...progress.kana, あ: { ...progress.kana.あ, completedOnce: true } } };
+    const completed = { ...progress, kana: { ...progress.kana, あ: { ...progress.kana.あ, readCompleted: true } } };
     render(<GardenScreen progress={completed} resumeRoute={{ kind: "kanaLesson", character: "あ" }} onContinue={vi.fn()} onReview={vi.fn()} onOpenParent={vi.fn()} />);
     fireEvent.error(screen.getByRole("button", { name: "あ を もういちど" }).querySelector("img")!);
     expect(screen.getByRole("button", { name: "イラストを もういちど よみこむ" })).toBeVisible();
@@ -39,5 +39,23 @@ describe("GardenScreen", () => {
     render(<GardenScreen progress={createInitialProgress()} resumeRoute={{ kind: "wordGarden" }} onContinue={vi.fn()} onReview={vi.fn()} onOpenParent={vi.fn()} />);
     expect(screen.getByRole("button", { name: "ことばの にわへ" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "つづきを あそぶ" })).not.toBeInTheDocument();
+  });
+
+  it("読み達成の花は保ち、4段階書字を体験した花だけ鉛筆印を付ける", () => {
+    const initial = createInitialProgress();
+    const progress = {
+      ...initial,
+      kana: {
+        ...initial.kana,
+        あ: { ...initial.kana["あ"], readCompleted: true },
+        い: { ...initial.kana["い"], readCompleted: true, writingCompleted: true },
+      },
+    };
+
+    render(<GardenScreen progress={progress} resumeRoute={{ kind: "kanaLesson", character: "う" }} onContinue={vi.fn()} onReview={vi.fn()} onOpenParent={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "あ を もういちど" })).not.toHaveAccessibleDescription("かく れんしゅうも した");
+    expect(screen.getByRole("button", { name: "い を もういちど" })).toHaveAccessibleDescription("かく れんしゅうも した");
+    expect(screen.getByRole("button", { name: "い を もういちど" }).querySelector("[data-pencil-badge]")).toBeInTheDocument();
   });
 });
