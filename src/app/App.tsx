@@ -9,6 +9,7 @@ import { WORD_ENTRIES } from "../features/learning/content/words";
 import { getWorldIllustration } from "../features/learning/content/assetCatalog";
 import { createInitialProgress, reduceLesson } from "../features/learning/model/reducer";
 import { isWordGardenUnlocked, selectRoute } from "../features/learning/model/selectors";
+import { isWritingStage, mergeKanaWritingPractice, selectKanaReviewStage } from "../features/learning/model/writingProgress";
 import type { KanaCharacter } from "../features/learning/content/types";
 import type { LearningRoute, LearningSettings, LearningState, LessonEvent } from "../features/learning/model/types";
 import { LessonScreen, createLessonChoices } from "../features/lesson/LessonScreen";
@@ -205,14 +206,19 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     setState(next);
     const completesRowReview = state.progress.rowReview?.step === "sound"
       && ((event.type === "ANSWER_SOUND" && event.correct) || event.type === "SKIP_SOUND_MATCH");
-    if ((event.type === "CONTINUE" && state.stage === "reward") || completesRowReview) {
+    const continuesRewardIntoWriting = event.type === "CONTINUE"
+      && state.stage === "reward"
+      && next.currentKana === state.currentKana
+      && isWritingStage(next.stage);
+    if (((event.type === "CONTINUE" && state.stage === "reward" && !continuesRewardIntoWriting)) || completesRowReview) {
       setScreen(screenForRoute(next));
     }
   };
   const beginReview = (character: KanaCharacter): void => {
     const index = KANA_ORDER.indexOf(character);
-    const progress = { ...state.progress, currentKanaIndex: index, stage: "intro" as const, rowReview: null, lessonAttempt: null };
-    setReviewState({ progress, currentKana: character, stage: "intro" });
+    const stage = selectKanaReviewStage(state.progress, character);
+    const progress = { ...state.progress, currentKanaIndex: index, stage, rowReview: null, lessonAttempt: null };
+    setReviewState({ progress, currentKana: character, stage });
     setScreen("lesson");
   };
   /** 読み上げを止め、通常進捗を変えずに単文字レッスンから庭へ戻る。 */
@@ -228,18 +234,49 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
   };
   const handleReviewDispatch = (event: LessonEvent): void => {
     if (!reviewState) return;
+    const reviewedCharacter = reviewState.currentKana;
+    const next = reduceLesson(reviewState, event);
+    const updatesWriting = event.type === "COMPLETE_TRACE"
+      || event.type === "COMPLETE_COPY"
+      || event.type === "COMPLETE_FREE_WRITE"
+      || event.type === "SKIP_FREE_WRITE"
+      || event.type === "DEFER_WRITING";
+    if (updatesWriting) {
+      setState((current) => ({
+        ...current,
+        progress: mergeKanaWritingPractice(
+          current.progress,
+          reviewedCharacter,
+          next.progress.kana[reviewedCharacter],
+        ),
+      }));
+    }
+    if (event.type === "SKIP_FREE_WRITE" || event.type === "DEFER_WRITING") {
+      setReviewState(null);
+      setScreen("garden");
+      return;
+    }
     if (event.type === "CONTINUE" && reviewState.stage === "reward") {
+      if (next.currentKana === reviewedCharacter && isWritingStage(next.stage)) {
+        setReviewState(next);
+        return;
+      }
       setReviewState(null);
       setActiveWordId(null);
       setWordReviewMode(false);
       setScreen("garden");
       return;
     }
-    setReviewState(reduceLesson(reviewState, event));
+    setReviewState(next);
   };
   const changeSettings = (settings: LearningSettings): void => {
     if (resetInFlightRef.current) return;
-    setState((current) => ({ ...current, progress: { ...current.progress, settings } }));
+    setState((current) => {
+      const modeAdjusted = current.progress.settings.learningMode === settings.learningMode
+        ? current
+        : reduceLesson(current, { type: "CHANGE_LEARNING_MODE", mode: settings.learningMode });
+      return { ...modeAdjusted, progress: { ...modeAdjusted.progress, settings } };
+    });
   };
   /** 書字まで終えた語は同じ花壇の次語へ進み、段階境界だけ庭へ戻す。 */
   const completeWordWriting = (wordId: string): void => {

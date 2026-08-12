@@ -257,6 +257,101 @@ describe("App", () => {
     expect(await screen.findByTestId("garden-screen")).toBeVisible();
   });
 
+  it("読み書きモードの読み花からは庭へ戻らず最初の未完書字へ進む", async () => {
+    const user = userEvent.setup();
+    const base = createInitialProgress();
+    const saved: LearningProgress = {
+      ...base,
+      stage: "reward",
+      settings: { ...base.settings, learningMode: "readingWriting" },
+      kana: {
+        ...base.kana,
+        あ: { ...base.kana["あ"], seen: true, shapeMatched: true, readCompleted: true },
+      },
+    };
+    const { runtime } = createRuntime(() => Promise.resolve(saved));
+    render(<App runtime={runtime} />);
+
+    await user.click(await screen.findByRole("button", { name: "つづきを あそぶ" }));
+    await user.click(screen.getByRole("button", { name: "じょうろで つぎへ" }));
+
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
+    expect(screen.queryByTestId("garden-screen")).not.toBeInTheDocument();
+  });
+
+  it("読み書きモードの未完書字花は最初の未体験段階から復習する", async () => {
+    const user = userEvent.setup();
+    const base = createInitialProgress();
+    const saved: LearningProgress = {
+      ...base,
+      currentKanaIndex: 1,
+      settings: { ...base.settings, learningMode: "readingWriting" },
+      kana: {
+        ...base.kana,
+        あ: {
+          ...base.kana["あ"],
+          seen: true,
+          shapeMatched: true,
+          readCompleted: true,
+          traceWideTried: true,
+        },
+      },
+    };
+    const { runtime } = createRuntime(() => Promise.resolve(saved));
+    render(<App runtime={runtime} />);
+
+    await user.click(await screen.findByRole("button", { name: "あ を もういちど" }));
+
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceNarrow");
+    expect(screen.getByRole("application", { name: "あ を なぞろう" })).toBeVisible();
+  });
+
+  it("復習書字のあとでは部分実績だけを保存し、本線カーソルを変えず庭へ戻る", async () => {
+    const user = userEvent.setup();
+    const base = createInitialProgress();
+    const saved: LearningProgress = {
+      ...base,
+      currentKanaIndex: 1,
+      stage: "intro",
+      settings: { ...base.settings, learningMode: "readingWriting" },
+      kana: {
+        ...base.kana,
+        あ: {
+          ...base.kana["あ"],
+          seen: true,
+          shapeMatched: true,
+          readCompleted: true,
+          traceWideTried: true,
+          traceNarrowTried: true,
+          copyTried: true,
+        },
+      },
+    };
+    const { runtime, save } = createRuntime(() => Promise.resolve(saved));
+    render(<App runtime={runtime} />);
+
+    await user.click(await screen.findByRole("button", { name: "あ を もういちど" }));
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "freeWrite");
+    await user.click(screen.getByRole("button", { name: "あとで かく" }));
+
+    expect(await screen.findByTestId("garden-screen")).toBeVisible();
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      currentKanaIndex: 1,
+      stage: "intro",
+      rowReview: null,
+      kana: expect.objectContaining({
+        あ: expect.objectContaining({
+          readCompleted: true,
+          traceWideTried: true,
+          traceNarrowTried: true,
+          copyTried: true,
+          freeWriteTried: false,
+          writingCompleted: false,
+        }),
+      }),
+    })));
+  });
+
   it("庭から未体験の現在文字を始める時だけSTARTを送り、復習は本線を変えない", async () => {
     const user = userEvent.setup();
     const base = createInitialProgress();
