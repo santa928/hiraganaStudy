@@ -56,6 +56,124 @@ describe("LessonScreen", () => {
     expect(replay.querySelector("svg")).toBeInTheDocument();
   });
 
+  it("初回のはじめるは音声解除が失敗しても形合わせへ進む", async () => {
+    const audio: AudioGuide = {
+      unlock: vi.fn().mockRejectedValue(new Error("speech unavailable")),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "locked",
+    };
+    renderLesson({ currentKana: "あ", stage: "intro", audio });
+
+    fireEvent.click(screen.getByRole("button", { name: "はじめる" }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(audio.unlock).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "shapeMatch");
+  });
+
+  it("初回の音声解除が終わった時は遷移後の形合わせ案内を読む", async () => {
+    let resolveUnlock: ((status: "ready") => void) | undefined;
+    const audio: AudioGuide = {
+      unlock: vi.fn(() => new Promise<"ready">((resolve) => { resolveUnlock = resolve; })),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "locked",
+    };
+    renderLesson({ currentKana: "あ", stage: "intro", audio });
+
+    fireEvent.click(screen.getByRole("button", { name: "はじめる" }));
+    vi.mocked(audio.speak).mockClear();
+    await act(async () => {
+      resolveUnlock?.("ready");
+      await Promise.resolve();
+    });
+
+    expect(audio.speak).toHaveBeenCalledOnce();
+    expect(audio.speak).toHaveBeenCalledWith("あひるの あ。おなじ かたちを さがそう", { interrupt: true });
+  });
+
+  it("初回tapで音声が即readyになっても形合わせ案内を二重に読まない", async () => {
+    let status: "locked" | "ready" = "locked";
+    const audio: AudioGuide = {
+      unlock: vi.fn(() => {
+        status = "ready";
+        return Promise.resolve<"ready">("ready");
+      }),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => status,
+    };
+    renderLesson({ currentKana: "あ", stage: "intro", audio });
+    vi.mocked(audio.speak).mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "はじめる" }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(audio.speak).toHaveBeenCalledOnce();
+    expect(audio.speak).toHaveBeenCalledWith("あひるの あ。おなじ かたちを さがそう", { interrupt: true });
+  });
+
+  it("初回unlock待ち中の手動再生は初回補助を無効化して一度だけ読む", async () => {
+    let resolveUnlock: ((status: "ready") => void) | undefined;
+    const unlocking = new Promise<"ready">((resolve) => { resolveUnlock = resolve; });
+    const audio: AudioGuide = {
+      unlock: vi.fn(() => unlocking),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "locked",
+    };
+    renderLesson({ currentKana: "あ", stage: "intro", audio });
+
+    fireEvent.click(screen.getByRole("button", { name: "はじめる" }));
+    vi.mocked(audio.speak).mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "こえを もういちど きく" }));
+    await act(async () => {
+      resolveUnlock?.("ready");
+      await Promise.resolve();
+    });
+
+    expect(audio.speak).toHaveBeenCalledOnce();
+    expect(audio.speak).toHaveBeenCalledWith("あひるの あ。おなじ かたちを さがそう", { interrupt: true });
+  });
+
+  it("初回の音声解除待ちに別の文字へ移ったら古い案内を読まない", async () => {
+    let resolveUnlock: ((status: "ready") => void) | undefined;
+    const audio: AudioGuide = {
+      unlock: vi.fn(() => new Promise<"ready">((resolve) => { resolveUnlock = resolve; })),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "locked",
+    };
+    const { rerender } = renderLesson({ currentKana: "あ", stage: "intro", audio });
+
+    fireEvent.click(screen.getByRole("button", { name: "はじめる" }));
+    vi.mocked(audio.speak).mockClear();
+    rerender({ currentKana: "い", stage: "intro", audio });
+    vi.mocked(audio.speak).mockClear();
+    await act(async () => {
+      resolveUnlock?.("ready");
+      await Promise.resolve();
+    });
+
+    expect(audio.speak).not.toHaveBeenCalled();
+  });
+
+  it("音声OFFの初回は解除を要求せず形合わせへ進む", () => {
+    const audio: AudioGuide = {
+      unlock: vi.fn().mockResolvedValue("ready"),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "locked",
+    };
+    renderLesson({ currentKana: "あ", stage: "intro", audio, speechEnabled: false });
+
+    fireEvent.click(screen.getByRole("button", { name: "はじめる" }));
+
+    expect(audio.unlock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "shapeMatch");
+  });
+
   it("全画面操作を出さず、右上の家から庭へ戻る", () => {
     const onReturnToGarden = vi.fn();
     renderLesson({ currentKana: "い", stage: "shapeMatch", onReturnToGarden });

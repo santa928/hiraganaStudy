@@ -6,7 +6,6 @@ import { GardenScreen } from "../features/garden/GardenScreen";
 import { RowReviewScreen } from "../features/garden/RowReviewScreen";
 import { KANA_ORDER, findKana } from "../features/learning/content/kana";
 import { WORD_ENTRIES } from "../features/learning/content/words";
-import { getWorldIllustration } from "../features/learning/content/assetCatalog";
 import { createInitialProgress, reduceLesson } from "../features/learning/model/reducer";
 import { isWordGardenUnlocked, selectRoute } from "../features/learning/model/selectors";
 import { isWritingStage, mergeKanaWritingPractice, selectKanaReviewStage } from "../features/learning/model/writingProgress";
@@ -39,7 +38,7 @@ export interface AppProps {
   readonly requestedRoute?: LearningRoute["kind"];
 }
 
-type EntryScreen = "soundGate" | "watering" | "garden" | "lesson" | "rowReview" | "parent" | "wordGarden" | "wordLesson";
+type EntryScreen = "garden" | "lesson" | "rowReview" | "parent" | "wordGarden" | "wordLesson";
 
 /** 読み上げ中だけ、対応する効果音実装へducking状態を伝える。 */
 export function createSpeechDuckingHandler(effects: AppSoundEffects): (active: boolean) => void {
@@ -57,12 +56,14 @@ function getDisplayMode(): ParentEnvironment["displayMode"] {
   return navigatorWithStandalone.standalone || globalThis.matchMedia?.("(display-mode: standalone)").matches ? "standalone" : "browser";
 }
 
-/** 通常導線の次画面を、保存済みrouteから一貫して選ぶ。 */
-function screenForRoute(state: LearningState): EntryScreen {
-  return selectRoute(state.progress).kind === "rowReview" ? "rowReview" : "garden";
+/** レッスン境界のReducer結果を、連続学習・行復習・全文字完了へ写像する。 */
+function screenAfterLessonBoundary(state: LearningState): EntryScreen {
+  if (state.progress.rowReview) return "rowReview";
+  if (isWordGardenUnlocked(state.progress)) return "garden";
+  return "lesson";
 }
 
-/** 初回音声確認、庭、行復習、保護者画面を純粋な学習進捗へ接続する。 */
+/** 初回導入、庭、行復習、保護者画面を純粋な学習進捗へ接続する。 */
 export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: suppliedEffects, requestedRoute }: AppProps = {}): JSX.Element {
   const runtimeRef = useRef<GameRuntime | null>(null);
   if (runtimeRef.current === null) runtimeRef.current = suppliedRuntime ?? createBrowserRuntime();
@@ -78,7 +79,7 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     { type: "RESUME", progress: createInitialProgress() },
   ));
   const [reviewState, setReviewState] = useState<LearningState | null>(null);
-  const [screen, setScreen] = useState<EntryScreen>("soundGate");
+  const [screen, setScreen] = useState<EntryScreen>("lesson");
   const [activeWordId, setActiveWordId] = useState<string | null>(null);
   const [wordReviewMode, setWordReviewMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -166,28 +167,13 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     screen,
     kana: state.currentKana,
     stage: state.stage,
-    promptHasIllustration: state.stage === "shapeMatch",
+    promptHasIllustration: state.stage === "intro" || state.stage === "shapeMatch",
     choices: state.stage === "shapeMatch" ? createLessonChoices(entry.character) : [],
     guideCount: state.progress.kana[state.currentKana].guideCount,
     wordsUnlocked: isWordGardenUnlocked(state.progress),
   });
   useEffect(() => registerGameTextState(() => snapshotRef.current), []);
 
-  const unlockAudio = (): void => {
-    void audio.unlock().then(() => {
-      if (!mountedRef.current) return;
-      setScreen("watering");
-      if (state.progress.settings.speech) void audio.speak("こえが きこえたら、じょうろを さわってね", { interrupt: true });
-    }).catch(() => {
-      if (mountedRef.current) setScreen("watering");
-    });
-  };
-  const startFirstLesson = (): void => {
-    audio.cancel();
-    void effects.play("tap");
-    dispatch({ type: "START" });
-    setScreen("lesson");
-  };
   const continueFromGarden = (): void => {
     void effects.play("tap");
     if (route.kind === "rowReview") {
@@ -210,8 +196,12 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
       && state.stage === "reward"
       && next.currentKana === state.currentKana
       && isWritingStage(next.stage);
-    if (((event.type === "CONTINUE" && state.stage === "reward" && !continuesRewardIntoWriting)) || completesRowReview) {
-      setScreen(screenForRoute(next));
+    const crossesLessonBoundary = (event.type === "CONTINUE" && state.stage === "reward" && !continuesRewardIntoWriting)
+      || event.type === "DEFER_WRITING"
+      || event.type === "SKIP_FREE_WRITE"
+      || completesRowReview;
+    if (crossesLessonBoundary) {
+      setScreen(screenAfterLessonBoundary(next));
     }
   };
   const beginReview = (character: KanaCharacter): void => {
@@ -315,7 +305,7 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
       setReviewState(null);
       audio.cancel();
       effects.stopGardenLoop();
-      setScreen("soundGate");
+      setScreen("lesson");
     } catch (error) {
       const recoveryGeneration = persistenceGenerationRef.current;
       const recoveryProgress = state.progress;
@@ -335,9 +325,6 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     displayMode: getDisplayMode(),
     pwaStatus,
   };
-  const wateringCan = getWorldIllustration("watering-can");
-  const background = getWorldIllustration("garden-background");
-
   if (isLoading) return <main className="app-shell" data-testid="app-loading" aria-busy="true" />;
   if (screen === "parent") return <ParentDashboard progress={state.progress} environment={environment} onSettingsChange={changeSettings} onReset={reset} onClose={() => setScreen("garden")} />;
   if (screen === "wordGarden") return <WordGardenScreen progress={state.progress} audio={audio} onStart={(wordId) => { setWordReviewMode(false); setActiveWordId(wordId); setScreen("wordLesson"); }} onReview={(wordId) => { setWordReviewMode(true); setActiveWordId(wordId); setScreen("wordLesson"); }} onBackToGarden={() => { setActiveWordId(null); setWordReviewMode(false); setScreen("garden"); }} />;
@@ -348,6 +335,5 @@ export function App({ runtime: suppliedRuntime, audio: suppliedAudio, effects: s
     const displayedState = reviewState ?? state;
     return <LessonScreen state={displayedState} dispatch={reviewState ? handleReviewDispatch : handleMainDispatch} audio={audio} speechEnabled={displayedState.progress.settings.speech} onCelebrate={playLessonSuccess} onReturnToGarden={returnFromLesson} />;
   }
-  if (screen === "watering") return <main className="app-shell app-shell--garden" style={{ backgroundImage: `url(${background.src})` }}><button className="watering-gate" type="button" aria-label="じょうろを さわる" onClick={startFirstLesson}><img src={wateringCan.src} alt="" width={wateringCan.width} height={wateringCan.height} /></button></main>;
-  return <main className="app-shell app-shell--garden" style={{ backgroundImage: `url(${background.src})` }}><button className="sound-gate" aria-label="こえを きく" type="button" onClick={unlockAudio}><svg className="sound-gate__speakerIcon" aria-hidden="true" viewBox="0 0 64 64" focusable="false"><path d="M10 26h12l16-13v38L22 38H10z" /><path d="M45 23c5 5 5 13 0 18M51 16c9 9 9 23 0 32" /></svg></button></main>;
+  return <main className="app-shell" />;
 }

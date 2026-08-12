@@ -72,6 +72,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
   const wateringCan = getWorldIllustration("watering-can");
   const mountedRef = useRef(true);
   const replayRequestRef = useRef(0);
+  const introUnlockRequestRef = useRef(0);
   const successTimerRef = useRef<number | null>(null);
   const pendingSuccessRef = useRef<PendingSuccess | null>(null);
   const [pendingSuccess, setPendingSuccess] = useState<PendingSuccess | null>(null);
@@ -151,6 +152,8 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
 
   const replayGuide = (): void => {
     if (!speechEnabled) return;
+    // 明示的な再生が初回unlock待ちを引き継ぐ時は、初回側の補助再生を無効化する。
+    introUnlockRequestRef.current += 1;
     const requestId = replayRequestRef.current + 1;
     const requestedStageIdentity = stageIdentity;
     const requestedGuide = guide.spoken;
@@ -175,6 +178,36 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
       await audio.speak(requestedGuide, { interrupt: true });
     };
     void replay();
+  };
+
+  /** 初回tapを音声解除へ使いながら、音声の成否とは独立して形合わせへ進める。 */
+  const continueFromIntro = (): void => {
+    const requestId = introUnlockRequestRef.current + 1;
+    const requestedCharacter = state.currentKana;
+    introUnlockRequestRef.current = requestId;
+    let unlockRequest: ReturnType<AudioGuide["unlock"]> | null = null;
+    let replayAfterUnlock = false;
+    if (speechEnabled && audio.getStatus() === "locked") {
+      try {
+        unlockRequest = audio.unlock();
+        // 即時readyならshapeMatchの通常effectが一度だけ読む。遅延readyだけ補助再生する。
+        replayAfterUnlock = audio.getStatus() !== "ready";
+      } catch {
+        unlockRequest = null;
+      }
+    }
+    dispatch({ type: "CONTINUE" });
+    if (!unlockRequest || !replayAfterUnlock) return;
+    void unlockRequest.then(async (status) => {
+      const expectedStage = `${requestedCharacter}-shapeMatch`;
+      if (
+        status !== "ready"
+        || !mountedRef.current
+        || introUnlockRequestRef.current !== requestId
+        || stageIdentityRef.current !== expectedStage
+      ) return;
+      await audio.speak(guideRef.current, { interrupt: true });
+    }).catch(() => undefined);
   };
 
   const answer = (choice: LearningState["currentKana"]): void => {
@@ -214,7 +247,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
           {visiblePendingSuccess?.target.kind === "writing" ? <SuccessBloom character={entry.character} /> : null}
         </section>
         <section className="lessonScreen__actions" data-layout="actions">
-          {state.stage === "intro" ? <button className="lessonButton" type="button" onClick={() => dispatch({ type: "CONTINUE" })}>はじめる</button> : null}
+          {state.stage === "intro" ? <button className="lessonButton" type="button" onClick={continueFromIntro}>はじめる</button> : null}
           {isChoiceStage ? <ChoiceGrid choices={choices} correct={entry.character} guideCount={stageAttempts} successChoice={visiblePendingSuccess?.target.kind === "choice" ? visiblePendingSuccess.target.choice : undefined} disabled={visiblePendingSuccess !== null} onChoose={answer} /> : null}
           {state.stage === "reward" ? <button className={`lessonButton${offersWriting ? "" : " lessonButton--watering"}`} type="button" onClick={() => dispatch({ type: "CONTINUE" })}>
             {offersWriting ? null : <img src={wateringCan.src} alt="" width={wateringCan.width} height={wateringCan.height} />}{offersWriting ? "かいてみよう" : "じょうろで つぎへ"}

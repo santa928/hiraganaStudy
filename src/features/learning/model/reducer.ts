@@ -326,7 +326,10 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
   }
 
   if (event.type === "CONTINUE") {
-    if (state.stage === "intro") return updateProgress(state, { stage: "shapeMatch" });
+    if (state.stage === "intro") {
+      const seenState = updateCurrentKana(state, (current) => ({ ...current, seen: true }));
+      return updateProgress(seenState, { stage: "shapeMatch" });
+    }
     if (state.stage === "reward") return continueAfterReward(state);
     return state;
   }

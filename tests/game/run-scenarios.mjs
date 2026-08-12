@@ -135,6 +135,11 @@ async function executeStep(page, step, sessionOutput, stateHistory) {
     await page.getByRole("button", { name: step.name, exact: true }).waitFor({ state: "visible" });
   } else if (step.action === "expectNoButton") {
     if (await page.getByRole("button", { name: step.name, exact: true }).count() !== 0) throw new Error(`表示してはいけないbuttonがあります: ${step.name}`);
+  } else if (step.action === "expectTargetMinSize") {
+    const box = await page.getByRole("button", { name: step.name, exact: true }).boundingBox();
+    if (!box || box.width < step.minimum || box.height < step.minimum) {
+      throw new Error(`操作領域が${step.minimum}px未満です: ${step.name} ${box ? `${box.width}x${box.height}` : "境界なし"}`);
+    }
   } else if (step.action === "expectState") {
     const expected = Object.fromEntries(Object.entries(step).filter(([key]) => key !== "action"));
     try {
@@ -209,6 +214,8 @@ async function runSession(browser, options, scenario, session, consoleErrors) {
   const separator = options.url.includes("?") ? "&" : "?";
   await page.goto(`${options.url}${separator}game-audit=${encodeURIComponent(cacheBuster)}`, { waitUntil: "domcontentloaded" });
   await page.getByTestId("app-loading").waitFor({ state: "detached", timeout: 10_000 }).catch(() => undefined);
+  // 初回に先行tapがない導線でも、React effectの監査hook登録前に状態を読まない。
+  await page.waitForFunction(() => typeof globalThis.render_game_to_text === "function", undefined, { timeout: 10_000 });
 
   const stateHistory = [];
   for (const step of session.flow) await executeStep(page, step, sessionOutput, stateHistory);

@@ -101,7 +101,6 @@ export type LessonEvent =
 
 /** 進捗から決まる学習アプリの主画面。 */
 export type LearningRoute =
-  | { readonly kind: "soundGate" }
   | { readonly kind: "garden" }
   | { readonly kind: "kanaLesson"; readonly character: KanaCharacter }
   | { readonly kind: "rowReview"; readonly row: KanaEntry["row"] }

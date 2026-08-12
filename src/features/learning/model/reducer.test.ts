@@ -217,13 +217,16 @@ describe("学習状態機械", () => {
     expect(createInitialProgress().settings.music).toBe(false);
   });
 
-  it("STARTで導入を既読にし、CONTINUEで形合わせへ進む", () => {
+  it("STARTを省いた初回CONTINUEでも導入を既読にして形合わせへ進む", () => {
     const started = reduceLesson(stateAt("あ", "intro"), { type: "START" });
     const continued = reduceLesson(started, { type: "CONTINUE" });
+    const continuedDirectly = reduceLesson(stateAt("あ", "intro"), { type: "CONTINUE" });
 
     expect(started.stage).toBe("intro");
     expect(started.progress.kana["あ"].seen).toBe(true);
     expect(continued.stage).toBe("shapeMatch");
+    expect(continuedDirectly.stage).toBe("shapeMatch");
+    expect(continuedDirectly.progress.kana["あ"].seen).toBe(true);
   });
 
   it("正しい形合わせは形の体験を記録して音問題を挟まず読みの花へ進む", () => {
@@ -493,15 +496,15 @@ describe("学習状態機械", () => {
     expect(result.progress.kana).not.toBe(state.progress.kana);
   });
 
-  it("初期進捗は音声確認ルートを返し、開始後は文字レッスンを返す", () => {
+  it("初期進捗からあの文字レッスンを返し、開始後も同じrouteを保つ", () => {
     const initial = createInitialProgress();
     const started = reduceLesson(stateAt("あ", "intro"), { type: "START" });
 
-    expect(selectRoute(initial)).toEqual({ kind: "soundGate" });
+    expect(selectRoute(initial)).toEqual({ kind: "kanaLesson", character: "あ" });
     expect(selectRoute(started.progress)).toEqual({ kind: "kanaLesson", character: "あ" });
   });
 
-  it("あを終えて未体験のいへ進むと庭へ戻る", () => {
+  it("あを終えて未体験のいへ進むと次の文字レッスンを返す", () => {
     const started = reduceLesson(stateAt("あ", "intro"), { type: "START" });
     const reward = {
       ...started,
@@ -511,7 +514,7 @@ describe("学習状態機械", () => {
     const next = reduceLesson(reward, { type: "CONTINUE" });
 
     expect(next.currentKana).toBe("い");
-    expect(selectRoute(next.progress)).toEqual({ kind: "garden" });
+    expect(selectRoute(next.progress)).toEqual({ kind: "kanaLesson", character: "い" });
   });
 
   it("途中再開で現在文字を見た履歴があれば文字レッスンを返す", () => {

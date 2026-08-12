@@ -1,15 +1,15 @@
 {
   "id": "first-kana",
-  "description": "音声確認から「あ」の形合わせへ進み、庭への往復と正解演出の後に音問題を挟まず書字へ進む",
+  "description": "初回から「あ」の教材を開き、庭への往復と正解演出の後に「い」へ連続して進む",
   "fixture": { "kind": "fresh" },
   "steps": [
     { "buttons": [], "frames": 2 }
   ],
   "flow": [
-    { "action": "expectState", "screen": "soundGate", "stage": "intro", "kana": "あ" },
-    { "action": "clickButton", "name": "こえを きく" },
-    { "action": "clickButton", "name": "じょうろを さわる" },
     { "action": "expectState", "screen": "lesson", "stage": "intro", "kana": "あ" },
+    { "action": "expectNoButton", "name": "こえを きく" },
+    { "action": "expectNoButton", "name": "じょうろを さわる" },
+    { "action": "expectTargetMinSize", "name": "はじめる", "minimum": 64 },
     { "action": "capture", "name": "intro" },
     { "action": "clickButton", "name": "はじめる" },
     { "action": "clickWrongKana", "correct": "あ" },
@@ -21,6 +21,9 @@
     { "action": "expectState", "screen": "lesson", "stage": "shapeMatch", "kana": "あ", "guideCount": 1 },
     { "action": "clickKana", "character": "あ" },
     { "action": "expectSuccess", "capture": "shape-success" },
-    { "action": "expectState", "screen": "lesson", "stage": "traceWide", "kana": "あ" }
+    { "action": "expectState", "screen": "lesson", "stage": "reward", "kana": "あ" },
+    { "action": "clickButton", "name": "じょうろで つぎへ" },
+    { "action": "expectState", "screen": "lesson", "stage": "intro", "kana": "い" },
+    { "action": "capture", "name": "next-kana-intro" }
   ]
 }

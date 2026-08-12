@@ -89,24 +89,26 @@ describe("App", () => {
     expect(setSpeechActive).toHaveBeenNthCalledWith(2, false);
   });
 
-  it("初回は復元完了後に音声確認を一つだけ表示する", async () => {
+  it("初回は音声確認とじょうろgateを挟まず、あの導入を表示する", async () => {
     const { runtime } = createRuntime(() => Promise.resolve(createInitialProgress()));
     render(<App runtime={runtime} />);
 
-    expect(await screen.findByRole("button", { name: "こえを きく" })).toBeVisible();
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(JSON.parse(window.render_game_to_text?.() ?? "{}")).toMatchObject({ promptHasIllustration: false });
+    expect(await screen.findByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
+    expect(screen.getByText("あひるの あ")).toBeVisible();
+    expect(screen.getByTestId("prompt-illustration")).toHaveAttribute("alt", "あひる");
+    expect(screen.getByRole("button", { name: "はじめる" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "こえを きく" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "じょうろを さわる" })).not.toBeInTheDocument();
   });
 
-  it("音声確認後はじょうろを一つだけ表示し、触ると導入を始める", async () => {
+  it("初回導入のはじめるを押すと文字の選択肢を表示する", async () => {
     const user = userEvent.setup();
     const { runtime } = createRuntime(() => Promise.resolve(createInitialProgress()));
     render(<App runtime={runtime} />);
 
-    await user.click(await screen.findByRole("button", { name: "こえを きく" }));
-
-    await user.click(screen.getByRole("button", { name: "じょうろを さわる" }));
-    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
+    await user.click(await screen.findByRole("button", { name: "はじめる" }));
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "shapeMatch");
+    expect(screen.getAllByRole("button", { name: /もじ/ })).toHaveLength(3);
   });
 
   it("load未解決中は操作を表示せず初期進捗を保存しない", async () => {
@@ -189,15 +191,11 @@ describe("App", () => {
     const { runtime, save } = createRuntime(() => Promise.resolve(createInitialProgress()));
     render(<App runtime={runtime} />);
 
-    await user.click(await screen.findByRole("button", { name: "こえを きく" }));
-    await user.click(screen.getByRole("button", { name: "じょうろを さわる" }));
+    await user.click(await screen.findByRole("button", { name: "はじめる" }));
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
-      stage: "intro",
+      stage: "shapeMatch",
       kana: expect.objectContaining({ あ: expect.objectContaining({ seen: true }) }),
     })));
-    await user.click(screen.getByRole("button", { name: "はじめる" }));
-
-    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ stage: "shapeMatch" })));
   });
 
   it("保存済み再開ではspeakerの明示tapでlocked音声を再試行する", async () => {
@@ -234,15 +232,21 @@ describe("App", () => {
     expect(JSON.parse(window.render_game_to_text?.() ?? "{}").choices).toEqual(createLessonChoices("い"));
   });
 
-  it("報酬後は非行末を庭へ、行末を行復習へ戻す", async () => {
+  it("報酬後は非行末を次文字の導入へ連続させ、行末だけ行復習へ進める", async () => {
     const user = userEvent.setup();
     const base = createInitialProgress();
-    const nonEnding: LearningProgress = { ...base, stage: "reward", kana: { ...base.kana, あ: { ...base.kana.あ, seen: true } } };
+    const nonEnding: LearningProgress = {
+      ...base,
+      stage: "reward",
+      kana: { ...base.kana, あ: { ...base.kana.あ, seen: true, shapeMatched: true, readCompleted: true } },
+    };
     const first = createRuntime(() => Promise.resolve(nonEnding));
     const { unmount } = render(<App runtime={first.runtime} />);
     await user.click(await screen.findByRole("button", { name: "つづきを あそぶ" }));
     await user.click(screen.getByRole("button", { name: "じょうろで つぎへ" }));
-    expect(await screen.findByTestId("garden-screen")).toBeVisible();
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
+    expect(screen.getByText("いぬの い")).toBeVisible();
+    expect(screen.queryByTestId("garden-screen")).not.toBeInTheDocument();
     unmount();
 
     const ending: LearningProgress = { ...base, currentKanaIndex: 4, stage: "reward", kana: { ...base.kana, お: { ...base.kana.お, seen: true } } };
@@ -254,7 +258,9 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "もじ お" }));
     expect(screen.getByTestId("row-review")).toHaveAttribute("data-step", "sound");
     await user.click(screen.getByRole("button", { name: "もじ お" }));
-    expect(await screen.findByTestId("garden-screen")).toBeVisible();
+    expect(await screen.findByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
+    expect(screen.getByText("かさの か")).toBeVisible();
+    expect(screen.queryByTestId("garden-screen")).not.toBeInTheDocument();
   });
 
   it("よむ・かくの単語書字をあとでにしても次の未読語へ進める", async () => {
@@ -342,6 +348,29 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "かいてみよう" }));
 
     expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "traceWide");
+    expect(screen.queryByTestId("garden-screen")).not.toBeInTheDocument();
+  });
+
+  it("読み書きモードの書字をあとでにしても庭を挟まず次文字へ進む", async () => {
+    const user = userEvent.setup();
+    const base = createInitialProgress();
+    const saved: LearningProgress = {
+      ...base,
+      stage: "traceWide",
+      settings: { ...base.settings, learningMode: "readingWriting" },
+      kana: {
+        ...base.kana,
+        あ: { ...base.kana.あ, seen: true, shapeMatched: true, readCompleted: true },
+      },
+    };
+    const { runtime } = createRuntime(() => Promise.resolve(saved));
+    render(<App runtime={runtime} />);
+
+    await user.click(await screen.findByRole("button", { name: "つづきを あそぶ" }));
+    await user.click(screen.getByRole("button", { name: "あとで" }));
+
+    expect(screen.getByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
+    expect(screen.getByText("いぬの い")).toBeVisible();
     expect(screen.queryByTestId("garden-screen")).not.toBeInTheDocument();
   });
 
@@ -494,7 +523,7 @@ describe("App", () => {
     expect(screen.getByTestId("row-review")).toHaveAttribute("data-step", "shape");
   });
 
-  it("端末音声なしの行復習は画像選択で停止せず次の文字の庭へ戻る", async () => {
+  it("端末音声なしの行復習は画像選択で停止せず次の文字へ進む", async () => {
     const user = userEvent.setup();
     const base = createInitialProgress();
     const saved: LearningProgress = {
@@ -509,11 +538,34 @@ describe("App", () => {
     render(<App runtime={runtime} audio={audio} />);
 
     await user.click(await screen.findByRole("button", { name: "つづきを あそぶ" }));
-    expect(await screen.findByTestId("garden-screen")).toBeVisible();
+    expect(await screen.findByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
+    expect(screen.getByText("かさの か")).toBeVisible();
+    expect(screen.queryByTestId("garden-screen")).not.toBeInTheDocument();
     await waitFor(() => expect(runtime.progressRepository.save).toHaveBeenCalledWith(expect.objectContaining({
       currentKanaIndex: 5,
       rowReview: null,
     })));
+  });
+
+  it("んの行復習を終えた時だけ全文字境界として文字の庭へ戻る", async () => {
+    const user = userEvent.setup();
+    const complete = progressWithCompletedCount(46);
+    const saved: LearningProgress = {
+      ...complete,
+      currentKanaIndex: 45,
+      stage: "soundMatch",
+      rowReview: { row: "wa", step: "sound" },
+      kana: Object.fromEntries(Object.entries(complete.kana).map(([character, value]) => [character, { ...value, seen: true }])) as LearningProgress["kana"],
+    };
+    const { runtime } = createRuntime(() => Promise.resolve(saved));
+    const audio: AudioGuide = { unlock: vi.fn().mockResolvedValue("visual-only"), speak: vi.fn().mockResolvedValue(undefined), cancel: vi.fn(), getStatus: () => "visual-only" };
+    render(<App runtime={runtime} audio={audio} />);
+
+    await user.click(await screen.findByRole("button", { name: "つづきを あそぶ" }));
+
+    expect(await screen.findByTestId("garden-screen")).toBeVisible();
+    expect(screen.getByRole("button", { name: "ことばの にわへ" })).toBeVisible();
+    expect(screen.queryByTestId("lesson-stage")).not.toBeInTheDocument();
   });
 
   it("保護者の設定は保存進捗と注入した効果音へ反映する", async () => {
@@ -608,6 +660,8 @@ describe("App", () => {
 
     await act(async () => { resolveSave?.(); });
     await waitFor(() => expect(reset).toHaveBeenCalledOnce());
+    expect(await screen.findByTestId("lesson-stage")).toHaveAttribute("data-stage", "intro");
+    expect(screen.getByText("あひるの あ")).toBeVisible();
   });
 
   it("reset失敗後はgenerationでskipした最新進捗を保存し直す", async () => {

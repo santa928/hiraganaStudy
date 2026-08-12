@@ -283,10 +283,10 @@ async function measureRowReviewSound(browser, options, viewport, errors) {
   issues.push(...findGuideReadabilityIssues(metrics.style).map((issue) => `行音復習: ${issue}`));
   await page.screenshot({ path: join(options.outputDirectory, `${viewport.name}-sound.png`), fullPage: false });
   await page.getByRole("button", { name: "こえの おさらいを とばす" }).click();
-  await page.getByTestId("garden-screen").waitFor({ state: "visible" });
+  await page.locator('[data-testid="lesson-stage"][data-stage="intro"]').waitFor({ state: "visible" });
   const afterSkip = await page.evaluate(() => JSON.parse(globalThis.render_game_to_text?.() ?? "{}"));
-  if (afterSkip.screen !== "garden" || afterSkip.kana !== "か" || afterSkip.stage !== "intro") {
-    issues.push(`行音復習のskip後が次の文字の庭でない: ${JSON.stringify(afterSkip)}`);
+  if (afterSkip.screen !== "lesson" || afterSkip.kana !== "か" || afterSkip.stage !== "intro") {
+    issues.push(`行音復習のskip後が次の文字導入でない: ${JSON.stringify(afterSkip)}`);
   }
   await context.close();
   return { metrics: { ...metrics, afterSkip }, issues };

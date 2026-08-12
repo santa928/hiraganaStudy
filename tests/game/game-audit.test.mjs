@@ -35,7 +35,10 @@ describe("完成版browser監査の固定scenario", () => {
     expect(scenarios[0].flow.some((step) => step.action === "completeSoundMatchIfAvailable")).toBe(false);
     expect(scenarios[0].flow.some((step) => step.action === "expectSuccess" && step.capture === "shape-success")).toBe(true);
     expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.stage === "soundMatch")).toBe(false);
-    expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.stage === "traceWide")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "expectState" && step.screen === "lesson" && step.stage === "intro" && step.kana === "い")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "expectNoButton" && step.name === "こえを きく")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "expectNoButton" && step.name === "じょうろを さわる")).toBe(true);
+    expect(scenarios[0].flow.some((step) => step.action === "expectTargetMinSize" && step.name === "はじめる" && step.minimum === 64)).toBe(true);
     expect(scenarios[1].flow.filter((step) => step.action === "drawAndContinue")).toHaveLength(4);
     expect(scenarios[1].flow.some((step) => step.action === "expectSuccess" && step.capture === "writing-success")).toBe(true);
     expect(scenarios[2].flow.some((step) => step.action === "clickButton" && step.name === "にわへ もどる")).toBe(true);

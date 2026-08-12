@@ -12,8 +12,6 @@ export function selectRoute(progress: LearningProgress): LearningRoute {
 
   if (progress.rowReview) return { kind: "rowReview", row: progress.rowReview.row };
   if (isWordGardenUnlocked(progress)) return { kind: "wordGarden" };
-  if (KANA_ORDER.every((character) => !progress.kana[character].seen)) return { kind: "soundGate" };
-  if (!progress.kana[currentKana].seen) return { kind: "garden" };
 
   return { kind: "kanaLesson", character: currentKana };
 }
