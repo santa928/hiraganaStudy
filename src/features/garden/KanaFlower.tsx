@@ -29,7 +29,7 @@ export function KanaFlower({ entry, completed, writingCompleted, onReview }: Kan
     onReview(entry.character);
   };
 
-  return <button className="kanaFlower" type="button" aria-label={imageError ? "イラストを もういちど よみこむ" : `${entry.character} を もういちど`} aria-describedby={writingCompleted ? writingDescriptionId : undefined} onClick={reviewOrRetry}>
+  return <button className={`kanaFlower${writingCompleted ? " kanaFlower--written" : ""}`} type="button" aria-label={imageError ? "イラストを もういちど よみこむ" : `${entry.character} を もういちど`} aria-describedby={writingCompleted ? writingDescriptionId : undefined} onClick={reviewOrRetry}>
     <span className="kanaFlower__petals" aria-hidden="true" />
     <span className="kanaFlower__character" aria-hidden="true">{entry.character}</span>
     <span className="kanaFlower__badge">

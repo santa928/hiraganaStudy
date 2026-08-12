@@ -11,7 +11,8 @@
 .wordGarden__bed > div { display: flex; min-block-size: 52px; align-items: center; flex-wrap: wrap; gap: 8px; }
 .wordGarden__flower, .wordGarden__seed { display: grid; min-inline-size: var(--touch-target-primary); min-block-size: var(--touch-target-primary); place-items: center; border: 2px solid var(--color-ink-indigo); border-radius: 999px; color: var(--color-ink-indigo); font-family: var(--font-kana); font-size: 1.25rem; font-weight: 800; padding-inline: 10px; }
 .wordGarden__flower { position: relative; background: #f7d76e; cursor: pointer; }
-.wordGarden__pencil { position: absolute; inset-block-start: -8px; inset-inline-end: -6px; display: grid; inline-size: 28px; block-size: 28px; place-items: center; border: 2px solid var(--color-ink-indigo); border-radius: 50%; background: #fff3bf; }
+.wordGarden__flower--written { padding-inline-end: 36px; }
+.wordGarden__pencil { position: absolute; inset-block-start: 2px; inset-inline-end: 2px; display: grid; inline-size: 28px; block-size: 28px; place-items: center; border: 2px solid var(--color-ink-indigo); border-radius: 50%; background: #fff3bf; }
 .wordGarden__pencil svg, .wordLesson__flowerPencil svg { inline-size: 70%; block-size: 70%; fill: none; stroke: currentcolor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
 .wordLessonVisuallyHidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .wordGarden__seed { background: #b98758; }

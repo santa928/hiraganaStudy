@@ -1,9 +1,11 @@
 node_modules/
 dist/
 .vite/
+.tmp/
 coverage/
 playwright-report/
 test-results/
+output/
 progress.md
 docs/superpowers/
 .superpowers/
