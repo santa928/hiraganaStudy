@@ -118,6 +118,49 @@ export function findSuccessOverlayIssues(metrics) {
   return issues;
 }
 
+/** browserのcomputed rgb/rgba表記をcontrast計算用の色へ変換する。 */
+function parseComputedColor(value) {
+  const match = value.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/i);
+  if (!match) return null;
+  const channels = match.slice(1, 4).map(Number);
+  const alpha = match[4] === undefined ? 1 : Number(match[4]);
+  if (channels.some((channel) => !Number.isFinite(channel)) || !Number.isFinite(alpha)) return null;
+  return { red: channels[0], green: channels[1], blue: channels[2], alpha };
+}
+
+/** sRGB色の相対輝度を返す。 */
+function relativeLuminance(color) {
+  const linear = [color.red, color.green, color.blue].map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+}
+
+/** 問題案内が背景から分離し、小さい画面でも読める実測styleかを検査する。 */
+export function findGuideReadabilityIssues(metrics) {
+  const issues = [];
+  const background = parseComputedColor(metrics.backgroundColor);
+  const foreground = parseComputedColor(metrics.color);
+  if (!background || background.alpha < 0.95) {
+    issues.push(`案内札の背景が不透明でない: ${metrics.backgroundColor}`);
+  }
+  if (!background || !foreground) {
+    issues.push("案内札の文字contrastを計算できない");
+  } else {
+    const brighter = Math.max(relativeLuminance(background), relativeLuminance(foreground));
+    const darker = Math.min(relativeLuminance(background), relativeLuminance(foreground));
+    if ((brighter + 0.05) / (darker + 0.05) < 4.5) issues.push("案内札の文字contrast不足");
+  }
+  if (Math.min(metrics.paddingBlockStart, metrics.paddingBlockEnd) < 4) {
+    issues.push(`案内札の上下padding不足: ${metrics.paddingBlockStart}px/${metrics.paddingBlockEnd}px`);
+  }
+  if (metrics.lineHeight < metrics.fontSize * 1.2) {
+    issues.push(`案内札の行間不足: ${metrics.lineHeight}px/${metrics.fontSize}px`);
+  }
+  return issues;
+}
+
 /** CLI引数を4 viewport監査設定へ変換する。 */
 function parseArguments(argv) {
   const options = {
@@ -157,7 +200,8 @@ async function measureViewport(browser, options, viewport, errors) {
   const page = await context.newPage();
   page.on("console", (message) => { if (message.type() === "error") errors.push(`${viewport.name}: console: ${message.text()}`); });
   page.on("pageerror", (error) => errors.push(`${viewport.name}: pageerror: ${String(error)}`));
-  await seedProgress(page, createProgressFixture({ completedKanaCount: 0, currentKana: "あ", stage: "shapeMatch" }), `containment-${viewport.name}`);
+  const progress = createProgressFixture({ completedKanaCount: 0, currentKana: "あ", stage: "shapeMatch" });
+  await seedProgress(page, { ...progress, settings: { ...progress.settings, speech: true } }, `containment-${viewport.name}`);
   await openAuditPage(page, options.url, viewport.name);
   await page.getByRole("button", { name: "つづきを あそぶ", exact: true }).click();
   await page.getByTestId("lesson-stage").waitFor({ state: "visible" });
@@ -197,6 +241,7 @@ async function measureViewport(browser, options, viewport, errors) {
     }));
     const rootRect = toRect(root);
     const bodyRect = toRect(body);
+    const guideStyle = getComputedStyle(guide);
     const regions = [
       { name: "hud", rect: toRect(hud), parentRect: rootRect },
       { name: "guide", rect: toRect(guide), parentRect: rootRect },
@@ -210,6 +255,14 @@ async function measureViewport(browser, options, viewport, errors) {
       root: rootRect,
       hud: toRect(hud),
       guide: toRect(guide),
+      guideStyle: {
+        backgroundColor: guideStyle.backgroundColor,
+        color: guideStyle.color,
+        paddingBlockStart: Number.parseFloat(guideStyle.paddingBlockStart),
+        paddingBlockEnd: Number.parseFloat(guideStyle.paddingBlockEnd),
+        lineHeight: Number.parseFloat(guideStyle.lineHeight),
+        fontSize: Number.parseFloat(guideStyle.fontSize),
+      },
       body: toRect(body),
       material: toRect(material),
       actions: toRect(actions),
@@ -228,6 +281,7 @@ async function measureViewport(browser, options, viewport, errors) {
   });
 
   const issues = findContainmentIssues(metrics);
+  issues.push(...findGuideReadabilityIssues(metrics.guideStyle));
   if (metrics.guideToBodyGap < 8 - 0.5) issues.push(`案内と教材のgap不足: ${rounded(metrics.guideToBodyGap)}px`);
   if (!metrics.imagesReady) issues.push("画像decode未完了");
   if (visualAssets.backgroundUrls.length === 0) issues.push("CSS背景画像がありません");
@@ -264,8 +318,45 @@ async function measureViewport(browser, options, viewport, errors) {
   });
   issues.push(...findSuccessOverlayIssues(success));
   await page.screenshot({ path: join(options.outputDirectory, `${viewport.name}-success.png`), fullPage: false });
+  await page.waitForFunction(() => {
+    const stage = document.querySelector('[data-testid="lesson-stage"]');
+    return stage instanceof HTMLElement && stage.dataset.stage === "soundMatch";
+  });
+  const soundGuide = await page.evaluate(() => {
+    const root = document.querySelector(".lessonScreen");
+    const guide = document.querySelector(".lessonScreen__guide");
+    const body = document.querySelector(".lessonScreen__body");
+    if (!(root instanceof HTMLElement) || !(guide instanceof HTMLElement) || !(body instanceof HTMLElement)) {
+      throw new Error("音問題の案内境界がありません");
+    }
+    const toRect = (element) => {
+      const value = element.getBoundingClientRect();
+      return { left: value.left, top: value.top, right: value.right, bottom: value.bottom, width: value.width, height: value.height };
+    };
+    const style = getComputedStyle(guide);
+    return {
+      text: guide.textContent,
+      rect: toRect(guide),
+      rootRect: toRect(root),
+      bodyTop: body.getBoundingClientRect().top,
+      style: {
+        backgroundColor: style.backgroundColor,
+        color: style.color,
+        paddingBlockStart: Number.parseFloat(style.paddingBlockStart),
+        paddingBlockEnd: Number.parseFloat(style.paddingBlockEnd),
+        lineHeight: Number.parseFloat(style.lineHeight),
+        fontSize: Number.parseFloat(style.fontSize),
+      },
+    };
+  });
+  if (soundGuide.text !== "こえを きいて\nおなじ もじを さがそう") issues.push(`音問題の画面案内が不正: ${JSON.stringify(soundGuide.text)}`);
+  if (soundGuide.text.includes("あひる") || soundGuide.text.includes("あひるの あ")) issues.push("音問題の画面に正解語が露出");
+  if (isOutside(soundGuide.rect, soundGuide.rootRect, 0.5)) issues.push("音問題の案内札がviewport外");
+  if (soundGuide.bodyTop - soundGuide.rect.bottom < 8 - 0.5) issues.push(`音問題の案内と教材のgap不足: ${rounded(soundGuide.bodyTop - soundGuide.rect.bottom)}px`);
+  issues.push(...findGuideReadabilityIssues(soundGuide.style).map((issue) => `音問題: ${issue}`));
+  await page.screenshot({ path: join(options.outputDirectory, `${viewport.name}-sound.png`), fullPage: false });
   await context.close();
-  return { name: viewport.name, metrics: { ...metrics, success }, issues };
+  return { name: viewport.name, metrics: { ...metrics, success, soundGuide }, issues };
 }
 
 /** 書字中のpaint間隔とpointer-to-paint遅延をDocker内の参考値として測る。 */
@@ -274,7 +365,7 @@ async function measureWritingPerformance(browser, options, errors) {
   const page = await context.newPage();
   page.on("console", (message) => { if (message.type() === "error") errors.push(`writing-performance: console: ${message.text()}`); });
   page.on("pageerror", (error) => errors.push(`writing-performance: pageerror: ${String(error)}`));
-  await seedProgress(page, createProgressFixture({ completedKanaCount: 0, currentKana: "あ", stage: "traceWide" }), "writing-performance");
+  await seedProgress(page, createProgressFixture({ completedKanaCount: 1, currentKana: "い", stage: "traceWide" }), "writing-performance");
   await openAuditPage(page, options.url, "writing-performance");
   await page.getByRole("button", { name: "つづきを あそぶ", exact: true }).click();
   const canvas = page.locator("canvas").last();

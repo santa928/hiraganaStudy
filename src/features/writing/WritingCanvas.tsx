@@ -42,6 +42,7 @@ const FRAME_INTERVAL = 1000 / 30;
 const DEADLINE_TOLERANCE_RATIO = 0.501;
 const MAX_DPR = 3;
 const PERFORMANCE_MARK_LIMIT = 32;
+const GUIDE_INSET_RATIO = 0.15;
 const advanceListeners = new Map<symbol, (milliseconds: number) => void>();
 let savedAdvanceTime: Window["advanceTime"] | undefined;
 let hasAdvanceHook = false;
@@ -124,12 +125,29 @@ function tryReleasePointerCapture(canvas: HTMLCanvasElement, pointerId: number):
   }
 }
 
-/** Canvas上のstrokeを丸端・丸継ぎ手で描く。 */
-function drawStroke(context: CanvasRenderingContext2D, points: readonly WritingPoint[], width: number, height: number, lineWidth: number, color: string): void {
+/** Canvas上のstrokeを丸端・丸継ぎ手で描き、guideだけは指定比率だけ中央へ収める。 */
+function drawStroke(
+  context: CanvasRenderingContext2D,
+  points: readonly WritingPoint[],
+  width: number,
+  height: number,
+  lineWidth: number,
+  color: string,
+  insetRatio = 0,
+): void {
   if (points.length === 0) return;
+  const scale = 1 - (insetRatio * 2);
+  const canvasPoint = ([x, y]: WritingPoint): readonly [number, number] => [
+    (insetRatio + (x * scale)) * width,
+    (insetRatio + (y * scale)) * height,
+  ];
+  const [startX, startY] = canvasPoint(points[0]);
   context.beginPath();
-  context.moveTo(points[0][0] * width, points[0][1] * height);
-  for (let index = 1; index < points.length; index += 1) context.lineTo(points[index][0] * width, points[index][1] * height);
+  context.moveTo(startX, startY);
+  for (let index = 1; index < points.length; index += 1) {
+    const [x, y] = canvasPoint(points[index]);
+    context.lineTo(x, y);
+  }
   context.lineWidth = lineWidth;
   context.strokeStyle = color;
   context.lineCap = "round";
@@ -145,7 +163,7 @@ function drawGuide(context: CanvasRenderingContext2D, template: StrokeTemplate, 
   const color = "rgba(136, 166, 128, 0.62)";
   for (const stroke of template.strokes) {
     const limit = Math.max(1, Math.ceil(stroke.points.length * progress));
-    drawStroke(context, stroke.points.slice(0, limit), width, height, lineWidth, color);
+    drawStroke(context, stroke.points.slice(0, limit), width, height, lineWidth, color, GUIDE_INSET_RATIO);
   }
 }
 

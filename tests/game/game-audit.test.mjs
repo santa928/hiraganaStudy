@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { analyzeWritingSamples, findContainmentIssues, findSuccessOverlayIssues } from "./assertions/check-containment.mjs";
+import { analyzeWritingSamples, findContainmentIssues, findGuideReadabilityIssues, findSuccessOverlayIssues } from "./assertions/check-containment.mjs";
 import { backgroundImageUrl } from "./assertions/wait-for-visuals.mjs";
 import { createProgressFixture, loadScenario } from "./run-scenarios.mjs";
 
@@ -152,6 +152,31 @@ describe("完成版browser監査の固定scenario", () => {
       "成功表示が操作を遮断: auto",
       "成功中に家が無効",
     ]);
+  });
+
+  it("透明・低contrast・余白不足の問題案内を拒否する", () => {
+    expect(findGuideReadabilityIssues({
+      backgroundColor: "rgba(255, 255, 255, 0)",
+      color: "rgb(245, 245, 245)",
+      paddingBlockStart: 2,
+      paddingBlockEnd: 2,
+      lineHeight: 17,
+      fontSize: 16,
+    })).toEqual([
+      "案内札の背景が不透明でない: rgba(255, 255, 255, 0)",
+      "案内札の文字contrast不足",
+      "案内札の上下padding不足: 2px/2px",
+      "案内札の行間不足: 17px/16px",
+    ]);
+
+    expect(findGuideReadabilityIssues({
+      backgroundColor: "rgba(255, 244, 215, 0.96)",
+      color: "rgb(35, 51, 95)",
+      paddingBlockStart: 6,
+      paddingBlockEnd: 6,
+      lineHeight: 22,
+      fontSize: 16,
+    })).toEqual([]);
   });
 
   it("READMEの公式Playwright imageをlockfileと同じ版にして空volumeへ依存しない", async () => {

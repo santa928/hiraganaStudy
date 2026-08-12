@@ -53,6 +53,25 @@ describe("RowReviewScreen", () => {
     expect(createRowReviewChoices("ん")).toEqual(["わ", "を", "ん"]);
   });
 
+  it("音復習も画面から正解語を隠し、関連語は読み上げだけに残す", () => {
+    const localAudio: AudioGuide = {
+      unlock: vi.fn().mockResolvedValue("ready"),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "ready",
+    };
+
+    render(<RowReviewScreen state={reviewState("よ", "ya", "sound")} dispatch={vi.fn()} audio={localAudio} onReturnToGarden={returnToGarden} />);
+
+    const guide = document.querySelector(".lessonScreen__guide");
+    expect(guide?.textContent).toBe("こえを きいて\nおなじ もじを さがそう");
+    expect(guide).not.toHaveTextContent("よっとの よ");
+    expect(localAudio.speak).toHaveBeenCalledWith(
+      "よっとの よ。こえを きいて、おなじ もじを さがそう",
+      { interrupt: true },
+    );
+  });
+
   it("こえを切った時も再生中の案内を必ず停止する", () => {
     const silentAudio: AudioGuide = { unlock: vi.fn(), speak: vi.fn(), cancel: vi.fn(), getStatus: () => "ready" };
     const state = reviewState("よ", "ya", "shape");

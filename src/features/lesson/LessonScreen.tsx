@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AudioGuide } from "../../platform/audio/AudioGuide";
 import { getIllustration, getWorldIllustration } from "../learning/content/assetCatalog";
-import { KANA_ORDER, findKana, kanaAssociationLabel } from "../learning/content/kana";
-import type { KanaEntry } from "../learning/content/types";
+import { KANA_ORDER, findKana } from "../learning/content/kana";
 import type { LearningState, LessonEvent } from "../learning/model/types";
 import { ChoiceGrid } from "./ChoiceGrid";
+import { lessonGuideCopy, type LessonGuideKey } from "./guideCopy";
 import { HomeIcon } from "./HomeIcon";
 import { PromptCard } from "./PromptCard";
 import { RewardStep } from "./RewardStep";
@@ -38,26 +38,6 @@ interface PendingSuccess {
   readonly stageIdentity: string;
   readonly event: LessonEvent;
   readonly target: SuccessTarget;
-}
-
-type GuideKey = "intro" | "shape" | "sound" | "again" | "show" | "traceWide" | "traceNarrow" | "copyWithModel" | "freeWrite" | "reward";
-
-/** 画面と読み上げが必ず同じ案内を使うための、短いコンテンツ辞書。 */
-function guideMessage(key: GuideKey, entry: KanaEntry): string {
-  const association = kanaAssociationLabel(entry);
-  const messages: Record<GuideKey, string> = {
-    intro: association,
-    shape: `${association}。おなじ かたちを さがそう`,
-    sound: `${association}。こえを きいて もじを さがそう`,
-    again: `もういちど、${association}。ゆっくり みてみよう`,
-    show: `${association}。おなじ もじを おしてみよう`,
-    traceWide: "ふとい みちを なぞろう",
-    traceNarrow: "ほそい みちを なぞろう",
-    copyWithModel: "おてほんを みて かこう",
-    freeWrite: "じぶんで かいてみよう",
-    reward: `${entry.character} の はなが さいたよ`,
-  };
-  return messages[key];
 }
 
 /** 正解位置を文字順から決定し、同じstageの再描画で選択肢を動かさない。 */
@@ -103,16 +83,16 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
     && state.progress.lessonAttempt.stage === state.stage
     ? state.progress.lessonAttempt.count
     : 0;
-  const guideKey: GuideKey = state.stage === "shapeMatch"
-    ? stageAttempts >= 3 ? "show" : stageAttempts >= 1 ? "again" : "shape"
+  const guideKey: LessonGuideKey = state.stage === "shapeMatch"
+    ? stageAttempts >= 3 ? "shapeShow" : stageAttempts >= 1 ? "shapeAgain" : "shape"
     : state.stage === "soundMatch"
-      ? stageAttempts >= 3 ? "show" : stageAttempts >= 1 ? "again" : "sound"
+      ? stageAttempts >= 3 ? "soundShow" : stageAttempts >= 1 ? "soundAgain" : "sound"
       : state.stage;
-  const guide = guideMessage(guideKey, entry);
+  const guide = lessonGuideCopy(guideKey, entry);
   const stageIdentityRef = useRef(stageIdentity);
-  const guideRef = useRef(guide);
+  const guideRef = useRef(guide.spoken);
   stageIdentityRef.current = stageIdentity;
-  guideRef.current = guide;
+  guideRef.current = guide.spoken;
 
   /** 予約中の成功遷移を破棄し、後から古い段階を進めない。 */
   const cancelPendingSuccess = useCallback((): void => {
@@ -153,12 +133,12 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
     replayRequestRef.current += 1;
     audio.cancel();
     if (!speechEnabled) return;
-    void audio.speak(guide, { interrupt: true });
+    void audio.speak(guide.spoken, { interrupt: true });
     return () => {
       replayRequestRef.current += 1;
       audio.cancel();
     };
-  }, [audio, guide, speechEnabled, stageIdentity]);
+  }, [audio, guide.spoken, speechEnabled, stageIdentity]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -176,7 +156,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
     const requestId = replayRequestRef.current + 1;
     const requestedStageIdentity = stageIdentity;
     const requestedStage = state.stage;
-    const requestedGuide = guide;
+    const requestedGuide = guide.spoken;
     replayRequestRef.current = requestId;
     audio.cancel();
     const replay = async (): Promise<void> => {
@@ -234,7 +214,7 @@ export function LessonScreen({ state, dispatch, audio, speechEnabled = true, onR
           <HomeIcon />
         </button>
       </header>
-      <p className="lessonScreen__guide" data-layout="guide">{guide}</p>
+      <p className="lessonScreen__guide" data-layout="guide">{guide.visible}</p>
       <div className="lessonScreen__body">
         <section className="lessonScreen__material" data-layout="lesson">
           {state.stage === "intro" ? <PromptCard entry={entry} showCharacter emphasized /> : null}

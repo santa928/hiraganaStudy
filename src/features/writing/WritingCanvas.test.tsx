@@ -101,6 +101,31 @@ afterEach(() => {
 });
 
 describe("WritingCanvas", () => {
+  it("なぞりguideの全中心線を各辺15%内側へ収める", () => {
+    const context = installCanvasContext();
+    const animation = installAnimationFrame();
+    const { getByRole } = render(<WritingCanvas template={loadStrokeTemplate("い")} mode="traceWide" />);
+    const canvas = getByRole("application");
+    Object.defineProperty(canvas.parentElement!, "getBoundingClientRect", { value: () => new DOMRect(0, 0, 100, 100) });
+
+    act(() => window.dispatchEvent(new Event("resize")));
+    act(() => animation.flush(34));
+
+    const drawing = context.mock.results[0].value;
+    const coordinates = [
+      ...drawing.moveTo.mock.calls.map(([x, y]: [number, number]) => [x, y]),
+      ...drawing.lineTo.mock.calls.map(([x, y]: [number, number]) => [x, y]),
+    ];
+    expect(coordinates.length).toBeGreaterThan(0);
+    for (const [x, y] of coordinates) {
+      expect(x).toBeGreaterThanOrEqual(15);
+      expect(x).toBeLessThanOrEqual(85);
+      expect(y).toBeGreaterThanOrEqual(15);
+      expect(y).toBeLessThanOrEqual(85);
+    }
+    animation.restore();
+  });
+
   it("朝の庭の語彙で、太いなぞりから補助なしまでguideを切り替える", () => {
     const context = installCanvasContext();
     const animation = installAnimationFrame();

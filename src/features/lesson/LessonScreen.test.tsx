@@ -58,6 +58,26 @@ describe("LessonScreen", () => {
     expect(screen.getAllByRole("button", { name: /もじ/ })).toHaveLength(3);
   });
 
+  it("音合わせは画面へ正解語を出さず、意味を分けた指示と関連語つき音声を使う", () => {
+    const audio: AudioGuide = {
+      unlock: vi.fn().mockResolvedValue("ready"),
+      speak: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn(),
+      getStatus: () => "ready",
+    };
+
+    renderLesson({ currentKana: "あ", stage: "soundMatch", audio });
+
+    const guide = document.querySelector(".lessonScreen__guide");
+    expect(guide).toHaveTextContent("こえを きいて おなじ もじを さがそう");
+    expect(guide?.textContent).toBe("こえを きいて\nおなじ もじを さがそう");
+    expect(guide).not.toHaveTextContent("あひるの あ");
+    expect(audio.speak).toHaveBeenCalledWith(
+      "あひるの あ。こえを きいて、おなじ もじを さがそう",
+      { interrupt: true },
+    );
+  });
+
   it("右上の再生操作は用途不明な鳥画像ではなくスピーカー記号にする", () => {
     renderLesson({ currentKana: "あ", stage: "intro" });
     const replay = screen.getByRole("button", { name: "こえを もういちど きく" });

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef } from "react";
 
 import type { AudioGuide } from "../../platform/audio/AudioGuide";
 import { getWorldIllustration } from "../learning/content/assetCatalog";
-import { KANA_ENTRIES, findKana, kanaAssociationLabel } from "../learning/content/kana";
+import { KANA_ENTRIES, findKana } from "../learning/content/kana";
 import type { KanaCharacter } from "../learning/content/types";
 import type { LearningState, LessonEvent } from "../learning/model/types";
 import { ChoiceGrid } from "../lesson/ChoiceGrid";
+import { lessonGuideCopy, type LessonGuideKey } from "../lesson/guideCopy";
 import { HomeIcon } from "../lesson/HomeIcon";
 import { PromptCard } from "../lesson/PromptCard";
 import { SoundPrompt } from "../lesson/SoundPrompt";
@@ -43,10 +44,10 @@ export function RowReviewScreen({ state, dispatch, audio, onReturnToGarden }: Ro
   const attempt = state.progress.lessonAttempt?.character === entry.character && state.progress.lessonAttempt.stage === state.stage
     ? state.progress.lessonAttempt.count
     : 0;
-  const association = kanaAssociationLabel(entry);
-  const guide = isShape
-    ? attempt >= 2 ? `${association}。おなじ もじを おしてみよう` : `${association}。おなじ かたちを さがそう`
-    : attempt >= 2 ? `${association}。こえを きいて さがそう` : `${association}。こえを きいて もじを さがそう`;
+  const guideKey: LessonGuideKey = isShape
+    ? attempt >= 2 ? "shapeShow" : "shape"
+    : attempt >= 2 ? "soundShow" : "sound";
+  const guide = lessonGuideCopy(guideKey, entry);
   const stageIdentity = `${entry.character}-${step}-${attempt}`;
   const mountedRef = useRef(true);
   const replayRequestRef = useRef(0);
@@ -58,9 +59,9 @@ export function RowReviewScreen({ state, dispatch, audio, onReturnToGarden }: Ro
     replayRequestRef.current += 1;
     audio.cancel();
     if (!state.progress.settings.speech) return;
-    void audio.speak(guide, { interrupt: true });
+    void audio.speak(guide.spoken, { interrupt: true });
     return () => audio.cancel();
-  }, [audio, guide, state.progress.settings.speech]);
+  }, [audio, guide.spoken, state.progress.settings.speech]);
   useEffect(() => {
     if (isShape) return;
     if (state.progress.settings.speech && audio.getStatus() !== "visual-only") return;
@@ -92,7 +93,7 @@ export function RowReviewScreen({ state, dispatch, audio, onReturnToGarden }: Ro
         if (!isShape) dispatch({ type: "SKIP_SOUND_MATCH" });
         return;
       }
-      await audio.speak(guide, { interrupt: true });
+      await audio.speak(guide.spoken, { interrupt: true });
     };
     void replay();
   };
@@ -108,7 +109,7 @@ export function RowReviewScreen({ state, dispatch, audio, onReturnToGarden }: Ro
         <button className="lessonScreen__speaker" type="button" aria-label="こえを もういちど きく" onClick={replayGuide}><SpeakerIcon /></button>
         <button className="lessonScreen__home" type="button" aria-label="にわへ もどる" onClick={onReturnToGarden}><HomeIcon /></button>
       </header>
-      <p className="lessonScreen__guide">{guide}</p>
+      <p className="lessonScreen__guide">{guide.visible}</p>
       <section className="rowReviewScreen__body">
         {isShape ? <PromptCard entry={entry} showCharacter emphasized={attempt >= 2} /> : <SoundPrompt onReplay={replayGuide} />}
         <ChoiceGrid choices={choices} correct={entry.character} guideCount={attempt} onChoose={answer} />
