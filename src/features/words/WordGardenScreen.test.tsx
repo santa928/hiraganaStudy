@@ -40,6 +40,54 @@ describe("WordGardenScreen", () => {
     expect(onStart).toHaveBeenCalledWith("w1-02");
   });
 
+  it("並べ終えた単語を花にし、書字完了時だけ鉛筆印を付ける", () => {
+    const initial = createInitialProgress();
+    const readProgress = {
+      ...initial,
+      words: {
+        ...initial.words,
+        "w1-01": {
+          ...initial.words["w1-01"],
+          selected: true,
+          arranged: true,
+          readCompleted: true,
+        },
+      },
+    };
+    const { rerender } = render(<WordGardenScreen progress={readProgress} audio={createAudio()} onStart={vi.fn()} onReview={vi.fn()} onBackToGarden={vi.fn()} />);
+
+    expect(findNextWordId(readProgress)).toBe("w1-02");
+    expect(screen.getByRole("button", { name: "いえ" })).not.toContainElement(document.querySelector("[data-pencil-badge]"));
+
+    const writtenProgress = {
+      ...readProgress,
+      words: {
+        ...readProgress.words,
+        "w1-01": { ...readProgress.words["w1-01"], writingTried: true, writingCompleted: true },
+      },
+    };
+    rerender(<WordGardenScreen progress={writtenProgress} audio={createAudio()} onStart={vi.fn()} onReview={vi.fn()} onBackToGarden={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /いえ/ }).querySelector("[data-pencil-badge]")).toBeInTheDocument();
+  });
+
+  it("60語すべてを読めたら書字未完でもことばの庭の完了を表示する", () => {
+    const initial = createInitialProgress();
+    const progress = {
+      ...initial,
+      words: Object.fromEntries(Object.entries(initial.words).map(([wordId, word]) => [wordId, {
+        ...word,
+        selected: true,
+        arranged: true,
+        readCompleted: true,
+      }])),
+    };
+    render(<WordGardenScreen progress={progress} audio={createAudio()} onStart={vi.fn()} onReview={vi.fn()} onBackToGarden={vi.fn()} />);
+
+    expect(findNextWordId(progress)).toBeNull();
+    expect(screen.getByText("ことばの にわが さきました")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "ことばを そだてよう" })).not.toBeInTheDocument();
+  });
+
   it("もじのにわへ戻る補助操作を48px以上で提供する", async () => {
     const user = userEvent.setup();
     const onBackToGarden = vi.fn();

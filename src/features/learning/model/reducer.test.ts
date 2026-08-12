@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { KANA_ORDER } from "../content/kana";
 import { reduceLesson, createInitialProgress } from "./reducer";
+import type { LearningProgress } from "./types";
 import { isWordGardenUnlocked, selectRoute } from "./selectors";
 import { progressAt, progressWithCompletedCount, stateAt } from "../../../test/fixtures/progress";
 
@@ -154,6 +155,44 @@ describe("学習状態機械", () => {
     const completed = progressWithCompletedCount(46);
     const wordState = { progress: completed, currentKana: "ん" as const, stage: "reward" as const };
     expect(reduceLesson(wordState, { type: "COMPLETE_WORD_SELECTION", wordId: "w1-02" })).toEqual(wordState);
+  });
+
+  it("単語は並べ終えた時点で読みを達成し、書字前でも次語を解放する", () => {
+    const completed = progressWithCompletedCount(46);
+    const initial = { progress: completed, currentKana: "ん" as const, stage: "reward" as const };
+    const selected = reduceLesson(initial, { type: "COMPLETE_WORD_SELECTION", wordId: "w1-01" });
+    const arranged = reduceLesson(selected, { type: "COMPLETE_WORD_ARRANGE", wordId: "w1-01" });
+    const nextSelected = reduceLesson(arranged, { type: "COMPLETE_WORD_SELECTION", wordId: "w1-02" });
+
+    expect(arranged.progress.words["w1-01"]).toMatchObject({
+      arranged: true,
+      readCompleted: true,
+      writingTried: false,
+      writingCompleted: false,
+    });
+    expect(nextSelected.progress.words["w1-02"].selected).toBe(true);
+  });
+
+  it("読めた単語の書字だけを後から完了し、次の未読語を変えない", () => {
+    const completed = progressWithCompletedCount(46);
+    const progress: LearningProgress = {
+      ...completed,
+      words: {
+        ...completed.words,
+        "w1-01": {
+          ...completed.words["w1-01"],
+          selected: true,
+          arranged: true,
+          readCompleted: true,
+        },
+      },
+    };
+    const state = { progress, currentKana: "ん" as const, stage: "reward" as const };
+    const written = reduceLesson(state, { type: "COMPLETE_WORD_WRITING", wordId: "w1-01" });
+
+    expect(written.progress.words["w1-01"]).toMatchObject({ writingTried: true, writingCompleted: true });
+    expect(written.progress.words["w1-02"]).toEqual(progress.words["w1-02"]);
+    expect(reduceLesson(state, { type: "COMPLETE_WORD_WRITING", wordId: "w1-02" })).toEqual(state);
   });
 
   it("初期進捗はあの導入から始まり、全46文字を未体験として作る", () => {

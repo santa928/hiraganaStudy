@@ -257,6 +257,72 @@ describe("App", () => {
     expect(await screen.findByTestId("garden-screen")).toBeVisible();
   });
 
+  it("よむ・かくの単語書字をあとでにしても次の未読語へ進める", async () => {
+    const user = userEvent.setup();
+    const complete = progressWithCompletedCount(46);
+    const progress: LearningProgress = {
+      ...complete,
+      settings: { ...complete.settings, learningMode: "readingWriting" },
+      kana: Object.fromEntries(Object.entries(complete.kana).map(([character, value]) => [character, { ...value, seen: true }])) as LearningProgress["kana"],
+      words: {
+        ...complete.words,
+        "w1-01": {
+          ...complete.words["w1-01"],
+          selected: true,
+          arranged: true,
+          readCompleted: true,
+        },
+      },
+    };
+    const { runtime } = createRuntime(() => Promise.resolve(progress));
+    render(<App runtime={runtime} requestedRoute="wordGarden" />);
+
+    await user.click(await screen.findByRole("button", { name: "いえ" }));
+    expect(screen.getByTestId("word-writing")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "あとで" }));
+    expect(await screen.findByTestId("word-garden")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "ことばを そだてよう" }));
+    expect(screen.getByRole("button", { name: "かお" })).toBeVisible();
+  });
+
+  it("未完の単語花で書き終えると書字実績だけを保存して本線位置を保つ", async () => {
+    const user = userEvent.setup();
+    const complete = progressWithCompletedCount(46);
+    const progress: LearningProgress = {
+      ...complete,
+      settings: { ...complete.settings, learningMode: "readingWriting" },
+      kana: Object.fromEntries(Object.entries(complete.kana).map(([character, value]) => [character, { ...value, seen: true }])) as LearningProgress["kana"],
+      words: {
+        ...complete.words,
+        "w1-01": {
+          ...complete.words["w1-01"],
+          selected: true,
+          arranged: true,
+          readCompleted: true,
+        },
+      },
+    };
+    const { runtime, save } = createRuntime(() => Promise.resolve(progress));
+    render(<App runtime={runtime} requestedRoute="wordGarden" />);
+
+    await user.click(await screen.findByRole("button", { name: "いえ" }));
+    const firstCanvas = screen.getByRole("application", { name: "い を かく" });
+    fireEvent.pointerDown(firstCanvas, { pointerId: 1, isPrimary: true, pointerType: "touch", clientX: 12, clientY: 12 });
+    fireEvent.pointerUp(firstCanvas, { pointerId: 1, isPrimary: true, pointerType: "touch", clientX: 18, clientY: 18 });
+    const secondCanvas = screen.getByRole("application", { name: "え を かく" });
+    fireEvent.pointerDown(secondCanvas, { pointerId: 2, isPrimary: true, pointerType: "touch", clientX: 12, clientY: 12 });
+    fireEvent.pointerUp(secondCanvas, { pointerId: 2, isPrimary: true, pointerType: "touch", clientX: 18, clientY: 18 });
+
+    expect(await screen.findByTestId("word-garden")).toBeVisible();
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      words: expect.objectContaining({
+        "w1-01": expect.objectContaining({ readCompleted: true, writingTried: true, writingCompleted: true }),
+        "w1-02": expect.objectContaining({ readCompleted: false, writingCompleted: false }),
+      }),
+    })));
+    expect(screen.getByRole("button", { name: "いえ" }).querySelector("[data-pencil-badge]")).toBeInTheDocument();
+  });
+
   it("読み書きモードの読み花からは庭へ戻らず最初の未完書字へ進む", async () => {
     const user = userEvent.setup();
     const base = createInitialProgress();

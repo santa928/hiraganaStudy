@@ -7,10 +7,11 @@ import { loadStrokeTemplate, type WritingCharacter } from "../writing/data/types
 export interface WordWritingStepProps {
   readonly cells: readonly string[];
   readonly onComplete: () => void;
+  readonly onDefer: () => void;
 }
 
-/** 書字を採点で止めず、一筆ごとに次の独立セルへ進める。 */
-export function WordWritingStep({ cells, onComplete }: WordWritingStepProps): React.JSX.Element {
+/** 書字を採点で止めず、一筆ごとに進めながらいつでも後回しにできる。 */
+export function WordWritingStep({ cells, onComplete, onDefer }: WordWritingStepProps): React.JSX.Element {
   const [cellIndex, setCellIndex] = useState(0);
   const character = cells[cellIndex];
   const isSmall = character === "っ" || character === "ゃ" || character === "ゅ" || character === "ょ";
@@ -25,5 +26,6 @@ export function WordWritingStep({ cells, onComplete }: WordWritingStepProps): Re
       <WritingCanvas key={`${character}-${cellIndex}`} template={loadStrokeTemplate(character as WritingCharacter)} mode="freeWrite" onAttempt={completeCell} ariaLabel={`${character} を かく`} />
     </div>
     <div className="wordLesson__cellDots" aria-label={`${cellIndex + 1} もじめ`}>{cells.map((cell, index) => <span className={index === cellIndex ? "is-current" : ""} key={`${cell}-${index}`}>{cell}</span>)}</div>
+    <div className="wordLesson__writingActions"><button className="wordLesson__defer" type="button" data-layout="word-writing-defer" onClick={onDefer}>あとで <span aria-hidden="true">▶</span></button></div>
   </section>;
 }

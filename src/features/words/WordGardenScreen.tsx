@@ -25,10 +25,10 @@ const STAGE_LABELS: Readonly<Record<WordStage, string>> = {
   W5: "おおきな ことばの はなだん",
 };
 
-/** 書字まで終えた語だけを、復習できる花として扱う。 */
+/** 並べ終えて読めた語を、復習できる花として扱う。 */
 function isComplete(progress: LearningProgress, wordId: string): boolean {
   const word = progress.words[wordId];
-  return word?.selected === true && word.arranged === true && word.writingTried === true;
+  return word?.readCompleted === true;
 }
 
 /** 本線を巻き戻さない最初の未完了語を返す。 */
@@ -64,7 +64,7 @@ export function WordGardenScreen({ progress, audio, onStart, onReview, onBackToG
       {STAGES.map((stage) => <section className="wordGarden__bed" key={stage} data-current={nextWord?.stage === stage || undefined}>
         <h2>{STAGE_LABELS[stage]}</h2>
         <div>{WORD_ENTRIES.filter((word) => word.stage === stage).map((word) => isComplete(progress, word.id)
-          ? <button type="button" className="wordGarden__flower" key={word.id} onClick={() => onReview(word.id)}>{word.text}</button>
+          ? <button type="button" className="wordGarden__flower" key={word.id} aria-label={word.text} aria-describedby={progress.words[word.id].writingCompleted ? `${word.id}-writing-description` : undefined} onClick={() => onReview(word.id)}>{word.text}{progress.words[word.id].writingCompleted ? <><span className="wordGarden__pencil" data-pencil-badge aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><path d="m7 23 2-7L22 3l7 7-13 13-7 2zM19 6l7 7M9 16l7 7" /></svg></span><span className="wordLessonVisuallyHidden" id={`${word.id}-writing-description`}>かく れんしゅうも した</span></> : null}</button>
           : <span className="wordGarden__seed" key={word.id} aria-label="これから そだつ ことば" />)}</div>
       </section>)}
     </section>

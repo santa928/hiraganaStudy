@@ -240,12 +240,19 @@ function updateWordProgress(
   return stateFromProgress({ ...state.progress, words: { ...state.progress.words, [wordId]: update(current) } });
 }
 
-/** 46文字完了後に、本線の最初の未完了語だけを更新対象にする。 */
-function canAdvanceWord(state: LearningState, wordId: string, step: keyof WordProgress): boolean {
+/** 46文字完了後に、本線の最初の未読語だけを選択・並べ替え対象にする。 */
+function canAdvanceWordReading(state: LearningState, wordId: string): boolean {
   if (!KANA_ORDER.every((character) => state.progress.kana[character].readCompleted)) return false;
   const target = state.progress.words[wordId];
-  if (!target || target[step]) return false;
-  return WORD_ENTRIES.find((entry) => !state.progress.words[entry.id].writingTried)?.id === wordId;
+  if (!target || target.readCompleted) return false;
+  return WORD_ENTRIES.find((entry) => !state.progress.words[entry.id].readCompleted)?.id === wordId;
+}
+
+/** 読み達成済みの既知語だけへ、後から書字体験を追記できるかを判定する。 */
+function canCompleteWordWriting(state: LearningState, wordId: string): boolean {
+  if (!KANA_ORDER.every((character) => state.progress.kana[character].readCompleted)) return false;
+  const target = state.progress.words[wordId];
+  return target?.arranged === true && target.readCompleted && !target.writingCompleted;
 }
 
 /** 行末の復習完了後、次の文字または単語コースへ進める。 */
@@ -405,13 +412,13 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
   }
 
   if (event.type === "COMPLETE_WORD_SELECTION") {
-    return canAdvanceWord(state, event.wordId, "selected") ? updateWordProgress(state, event.wordId, (word) => ({ ...word, selected: true })) : state;
+    return canAdvanceWordReading(state, event.wordId) ? updateWordProgress(state, event.wordId, (word) => word.selected ? word : { ...word, selected: true }) : state;
   }
   if (event.type === "COMPLETE_WORD_ARRANGE") {
-    return canAdvanceWord(state, event.wordId, "arranged") ? updateWordProgress(state, event.wordId, (word) => word.selected ? { ...word, arranged: true } : word) : state;
+    return canAdvanceWordReading(state, event.wordId) ? updateWordProgress(state, event.wordId, (word) => word.selected ? { ...word, arranged: true, readCompleted: true } : word) : state;
   }
   if (event.type === "COMPLETE_WORD_WRITING") {
-    return canAdvanceWord(state, event.wordId, "writingTried") ? updateWordProgress(state, event.wordId, (word) => word.arranged ? { ...word, writingTried: true } : word) : state;
+    return canCompleteWordWriting(state, event.wordId) ? updateWordProgress(state, event.wordId, (word) => ({ ...word, writingTried: true, writingCompleted: true })) : state;
   }
 
   return state;
