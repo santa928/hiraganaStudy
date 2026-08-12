@@ -91,6 +91,8 @@ export type LessonEvent =
   | { readonly type: "COMPLETE_COPY" }
   | { readonly type: "COMPLETE_FREE_WRITE" }
   | { readonly type: "SKIP_FREE_WRITE" }
+  | { readonly type: "DEFER_WRITING" }
+  | { readonly type: "CHANGE_LEARNING_MODE"; readonly mode: LearningMode }
   | { readonly type: "COMPLETE_WORD_SELECTION"; readonly wordId: string }
   | { readonly type: "COMPLETE_WORD_ARRANGE"; readonly wordId: string }
   | { readonly type: "COMPLETE_WORD_WRITING"; readonly wordId: string }

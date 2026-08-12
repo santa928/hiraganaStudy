@@ -5,7 +5,147 @@ import { reduceLesson, createInitialProgress } from "./reducer";
 import { isWordGardenUnlocked, selectRoute } from "./selectors";
 import { progressAt, progressWithCompletedCount, stateAt } from "../../../test/fixtures/progress";
 
+/** 読みの花まで到達した文字を、指定段階から再開するテスト状態を作る。 */
+function readCompletedStateAt(
+  character: Parameters<typeof stateAt>[0],
+  stage: Parameters<typeof stateAt>[1],
+) {
+  const initial = stateAt(character, stage);
+  return {
+    ...initial,
+    progress: {
+      ...initial.progress,
+      kana: {
+        ...initial.progress.kana,
+        [character]: { ...initial.progress.kana[character], readCompleted: true },
+      },
+    },
+  };
+}
+
 describe("学習状態機械", () => {
+  it("形合わせ正解で読みを達成し、書字より先に花へ進む", () => {
+    const result = reduceLesson(stateAt("か", "shapeMatch"), { type: "ANSWER_SHAPE", correct: true });
+
+    expect(result.stage).toBe("reward");
+    expect(result.progress.kana["か"]).toMatchObject({ shapeMatched: true, readCompleted: true });
+  });
+
+  it("読みモードは花の後に書字を挟まず次の未読文字へ進む", () => {
+    const initial = stateAt("あ", "reward");
+    const state = {
+      ...initial,
+      progress: {
+        ...initial.progress,
+        kana: { ...initial.progress.kana, あ: { ...initial.progress.kana["あ"], readCompleted: true } },
+      },
+    };
+
+    const result = reduceLesson(state, { type: "CONTINUE" });
+
+    expect(result.currentKana).toBe("い");
+    expect(result.stage).toBe("intro");
+  });
+
+  it("読み書きモードは花の後に最初の未完書字へ進む", () => {
+    const initial = stateAt("あ", "reward");
+    const state = {
+      ...initial,
+      progress: {
+        ...initial.progress,
+        settings: { ...initial.progress.settings, learningMode: "readingWriting" as const },
+        kana: {
+          ...initial.progress.kana,
+          あ: { ...initial.progress.kana["あ"], readCompleted: true, traceWideTried: true },
+        },
+      },
+    };
+
+    const result = reduceLesson(state, { type: "CONTINUE" });
+
+    expect(result.currentKana).toBe("あ");
+    expect(result.stage).toBe("traceNarrow");
+  });
+
+  it.each(["traceWide", "traceNarrow", "copyWithModel", "freeWrite"] as const)(
+    "%sからあとでを選ぶと書字実績を保って次の未読文字へ進む",
+    (stage) => {
+      const initial = stateAt("あ", stage);
+      const state = {
+        ...initial,
+        progress: {
+          ...initial.progress,
+          settings: { ...initial.progress.settings, learningMode: "readingWriting" as const },
+          kana: {
+            ...initial.progress.kana,
+            あ: { ...initial.progress.kana["あ"], readCompleted: true, traceWideTried: true },
+          },
+        },
+      };
+
+      const result = reduceLesson(state, { type: "DEFER_WRITING" });
+
+      expect(result.currentKana).toBe("い");
+      expect(result.stage).toBe("intro");
+      expect(result.progress.kana["あ"].traceWideTried).toBe(true);
+      expect(result.progress.kana["あ"].writingCompleted).toBe(false);
+    },
+  );
+
+  it("4段階すべてを体験した時だけ書字完了として花へ戻る", () => {
+    const initial = stateAt("あ", "freeWrite");
+    const state = {
+      ...initial,
+      progress: {
+        ...initial.progress,
+        settings: { ...initial.progress.settings, learningMode: "readingWriting" as const },
+        kana: {
+          ...initial.progress.kana,
+          あ: {
+            ...initial.progress.kana["あ"],
+            readCompleted: true,
+            traceWideTried: true,
+            traceNarrowTried: true,
+            copyTried: true,
+          },
+        },
+      },
+    };
+
+    const result = reduceLesson(state, { type: "COMPLETE_FREE_WRITE" });
+
+    expect(result.stage).toBe("reward");
+    expect(result.progress.kana["あ"]).toMatchObject({ freeWriteTried: true, writingCompleted: true });
+  });
+
+  it("前の書字段階が欠けた自由書字では鉛筆印を完了にしない", () => {
+    const result = reduceLesson(readCompletedStateAt("あ", "freeWrite"), { type: "COMPLETE_FREE_WRITE" });
+
+    expect(result.progress.kana["あ"].freeWriteTried).toBe(true);
+    expect(result.progress.kana["あ"].writingCompleted).toBe(false);
+  });
+
+  it("書字中に読みモードへ変えると途中実績を保って次の読みへ進む", () => {
+    const initial = stateAt("あ", "traceNarrow");
+    const state = {
+      ...initial,
+      progress: {
+        ...initial.progress,
+        settings: { ...initial.progress.settings, learningMode: "readingWriting" as const },
+        kana: {
+          ...initial.progress.kana,
+          あ: { ...initial.progress.kana["あ"], readCompleted: true, traceWideTried: true },
+        },
+      },
+    };
+
+    const result = reduceLesson(state, { type: "CHANGE_LEARNING_MODE", mode: "reading" });
+
+    expect(result.progress.settings.learningMode).toBe("reading");
+    expect(result.currentKana).toBe("い");
+    expect(result.progress.kana["あ"].traceWideTried).toBe(true);
+  });
+
   it("46文字未完了時と本線より先の単語イベントを無視する", () => {
     const initial = createInitialProgress();
     const state = { progress: initial, currentKana: "あ" as const, stage: "intro" as const };
@@ -47,10 +187,10 @@ describe("学習状態機械", () => {
     expect(continued.stage).toBe("shapeMatch");
   });
 
-  it("正しい形合わせは形の体験を記録して音問題を挟まず太いなぞりへ進む", () => {
+  it("正しい形合わせは形の体験を記録して音問題を挟まず読みの花へ進む", () => {
     const result = reduceLesson(stateAt("か", "shapeMatch"), { type: "ANSWER_SHAPE", correct: true });
 
-    expect(result.stage).toBe("traceWide");
+    expect(result.stage).toBe("reward");
     expect(result.progress.kana["か"].shapeMatched).toBe(true);
     expect(result.progress.kana["か"].soundMatched).toBe(false);
   });
@@ -75,11 +215,11 @@ describe("学習状態機械", () => {
     expect(second.progress.lessonAttempt).toEqual({ character: "か", stage: "shapeMatch", count: 2 });
   });
 
-  it("形合わせを完了すると試行回数を消して太いなぞりへ進む", () => {
+  it("形合わせを完了すると試行回数を消して読みの花へ進む", () => {
     const first = reduceLesson(stateAt("か", "shapeMatch"), { type: "ANSWER_SHAPE", correct: false });
     const writing = reduceLesson(first, { type: "ANSWER_SHAPE", correct: true });
 
-    expect(writing.stage).toBe("traceWide");
+    expect(writing.stage).toBe("reward");
     expect(writing.progress.lessonAttempt).toBeNull();
   });
 
@@ -94,7 +234,7 @@ describe("学習状態機械", () => {
   });
 
   it("行復習の音を誤答しても段階を保ち、案内回数だけを増やす", () => {
-    const review = reduceLesson(stateAt("お", "reward"), { type: "CONTINUE" });
+    const review = reduceLesson(readCompletedStateAt("お", "reward"), { type: "CONTINUE" });
     const sound = reduceLesson(review, { type: "ANSWER_SHAPE", correct: true });
     const result = reduceLesson(sound, { type: "ANSWER_SOUND", correct: false });
 
@@ -135,15 +275,16 @@ describe("学習状態機械", () => {
     expect(result.progress.kana["は"].freeWriteTried).toBe(true);
   });
 
-  it("自由書字はスキップでも報酬へ進み、未体験を保持する", () => {
-    const result = reduceLesson(stateAt("は", "freeWrite"), { type: "SKIP_FREE_WRITE" });
+  it("旧自由書字スキップもあとでとして次の読みへ進み、未体験を保持する", () => {
+    const result = reduceLesson(readCompletedStateAt("は", "freeWrite"), { type: "SKIP_FREE_WRITE" });
 
-    expect(result.stage).toBe("reward");
+    expect(result.currentKana).toBe("ひ");
+    expect(result.stage).toBe("intro");
     expect(result.progress.kana["は"].freeWriteTried).toBe(false);
   });
 
   it("あの報酬完了後は必ずいへ進む", () => {
-    const result = reduceLesson(stateAt("あ", "reward"), { type: "CONTINUE" });
+    const result = reduceLesson(readCompletedStateAt("あ", "reward"), { type: "CONTINUE" });
 
     expect(result.currentKana).toBe("い");
     expect(result.stage).toBe("intro");
@@ -154,23 +295,23 @@ describe("学習状態機械", () => {
     ["お", "a"], ["こ", "ka"], ["そ", "sa"], ["と", "ta"], ["の", "na"],
     ["ほ", "ha"], ["も", "ma"], ["よ", "ya"], ["ろ", "ra"], ["ん", "wa"],
   ] as const)("行末の%sは次の文字ではなく%s行の形復習へ進む", (character, row) => {
-    const result = reduceLesson(stateAt(character, "reward"), { type: "CONTINUE" });
+    const result = reduceLesson(readCompletedStateAt(character, "reward"), { type: "CONTINUE" });
 
     expect(result.currentKana).toBe(character);
     expect(result.stage).toBe("shapeMatch");
     expect(result.progress.rowReview).toEqual({ row, step: "shape" });
-    expect(result.progress.kana[character].readCompleted).toBe(false);
+    expect(result.progress.kana[character].readCompleted).toBe(true);
     expect(selectRoute(result.progress)).toEqual({ kind: "rowReview", row });
   });
 
   it("行復習は形、音の順に終えた後だけ次の文字へ進む", () => {
-    const review = reduceLesson(stateAt("お", "reward"), { type: "CONTINUE" });
+    const review = reduceLesson(readCompletedStateAt("お", "reward"), { type: "CONTINUE" });
     const sound = reduceLesson(review, { type: "ANSWER_SHAPE", correct: true });
     const next = reduceLesson(sound, { type: "ANSWER_SOUND", correct: true });
 
     expect(sound.progress.rowReview).toEqual({ row: "a", step: "sound" });
-    expect(review.progress.kana["お"].readCompleted).toBe(false);
-    expect(sound.progress.kana["お"].readCompleted).toBe(false);
+    expect(review.progress.kana["お"].readCompleted).toBe(true);
+    expect(sound.progress.kana["お"].readCompleted).toBe(true);
     expect(next.progress.rowReview).toBeNull();
     expect(next.currentKana).toBe("か");
     expect(next.stage).toBe("intro");
@@ -179,7 +320,7 @@ describe("学習状態機械", () => {
   });
 
   it("行復習の音を再生できない時は音達成を変えず次の文字へ進む", () => {
-    const review = reduceLesson(stateAt("お", "reward"), { type: "CONTINUE" });
+    const review = reduceLesson(readCompletedStateAt("お", "reward"), { type: "CONTINUE" });
     const sound = reduceLesson(review, { type: "ANSWER_SHAPE", correct: true });
     const next = reduceLesson(sound, { type: "SKIP_SOUND_MATCH" });
 
@@ -198,7 +339,15 @@ describe("学習状態機械", () => {
   it("最終行の復習まで終えると46文字完了として単語の庭へ進む", () => {
     const beforeFinalKana = progressWithCompletedCount(45);
     const finalState = {
-      progress: { ...beforeFinalKana, currentKanaIndex: 45, stage: "reward" as const },
+      progress: {
+        ...beforeFinalKana,
+        currentKanaIndex: 45,
+        stage: "reward" as const,
+        kana: {
+          ...beforeFinalKana.kana,
+          ん: { ...beforeFinalKana.kana["ん"], readCompleted: true },
+        },
+      },
       currentKana: "ん" as const,
       stage: "reward" as const,
     };
@@ -206,10 +355,10 @@ describe("学習状態機械", () => {
     const sound = reduceLesson(review, { type: "ANSWER_SHAPE", correct: true });
     const completed = reduceLesson(sound, { type: "ANSWER_SOUND", correct: true });
 
-    expect(review.progress.kana["ん"].readCompleted).toBe(false);
-    expect(sound.progress.kana["ん"].readCompleted).toBe(false);
-    expect(isWordGardenUnlocked(review.progress)).toBe(false);
-    expect(isWordGardenUnlocked(sound.progress)).toBe(false);
+    expect(review.progress.kana["ん"].readCompleted).toBe(true);
+    expect(sound.progress.kana["ん"].readCompleted).toBe(true);
+    expect(isWordGardenUnlocked(review.progress)).toBe(true);
+    expect(isWordGardenUnlocked(sound.progress)).toBe(true);
     expect(completed.progress.kana["ん"].readCompleted).toBe(true);
     expect(selectRoute(review.progress)).toEqual({ kind: "rowReview", row: "wa" });
     expect(selectRoute(sound.progress)).toEqual({ kind: "rowReview", row: "wa" });

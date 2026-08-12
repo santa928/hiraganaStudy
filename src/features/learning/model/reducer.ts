@@ -10,6 +10,7 @@ import type {
   LessonStage,
   WordProgress,
 } from "./types";
+import { firstIncompleteWritingStage, isWritingStage } from "./writingProgress";
 
 const ROW_ENDINGS = new Set<KanaCharacter>(["お", "こ", "そ", "と", "の", "ほ", "も", "よ", "ろ", "ん"]);
 const LESSON_STAGES = new Set<LessonStage>([
@@ -262,8 +263,8 @@ function advanceAfterRowReview(state: LearningState): LearningState {
   });
 }
 
-/** 非行末は報酬で確定し、行末は確定を保留して復習を始める。 */
-function continueAfterReward(state: LearningState): LearningState {
+/** 読み達成済みの文字から、行復習または次の未読文字へ進める。 */
+function advanceAfterRead(state: LearningState): LearningState {
   if (ROW_ENDINGS.has(state.currentKana)) {
     return updateProgress(state, {
       rowReview: { row: getKanaRow(state.currentKana), step: "shape" },
@@ -271,9 +272,22 @@ function continueAfterReward(state: LearningState): LearningState {
     });
   }
 
-  const completed = updateCurrentKana(state, (current) => ({ ...current, readCompleted: true }));
+  return advanceAfterRowReview(state);
+}
 
-  return advanceAfterRowReview(completed);
+/** 読みの花から、モードに応じて未完書字または次の読みへ進める。 */
+function continueAfterReward(state: LearningState): LearningState {
+  const current = state.progress.kana[state.currentKana];
+  if (
+    state.progress.settings.learningMode === "readingWriting"
+    && current.readCompleted
+    && !current.writingCompleted
+  ) {
+    const nextWritingStage = firstIncompleteWritingStage(current);
+    if (nextWritingStage) return updateProgress(state, { stage: nextWritingStage });
+  }
+
+  return advanceAfterRead(state);
 }
 
 /** 対象文字に対応する五十音行を、コンテンツ順から返す。 */
@@ -310,6 +324,17 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
     return state;
   }
 
+  if (event.type === "CHANGE_LEARNING_MODE") {
+    if (state.progress.settings.learningMode === event.mode) return state;
+    const changed = stateFromProgress({
+      ...state.progress,
+      settings: { ...state.progress.settings, learningMode: event.mode },
+    });
+    return event.mode === "reading" && isWritingStage(state.stage)
+      ? advanceAfterRead(changed)
+      : changed;
+  }
+
   if (event.type === "ANSWER_SHAPE" && state.stage === "shapeMatch") {
     if (!event.correct) {
       return recordWrongAnswer(state, "shapeMatch");
@@ -322,7 +347,11 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
       });
     }
 
-    return updateCurrentKana(state, (current) => ({ ...current, shapeMatched: true }), { stage: "traceWide" });
+    return updateCurrentKana(
+      state,
+      (current) => ({ ...current, shapeMatched: true, readCompleted: true }),
+      { stage: "reward" },
+    );
   }
 
   if (event.type === "ANSWER_SOUND" && state.stage === "soundMatch") {
@@ -360,11 +389,19 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
   }
 
   if (event.type === "COMPLETE_FREE_WRITE" && state.stage === "freeWrite") {
-    return updateCurrentKana(state, (current) => ({ ...current, freeWriteTried: true }), { stage: "reward" });
+    return updateCurrentKana(state, (current) => ({
+      ...current,
+      freeWriteTried: true,
+      writingCompleted: current.traceWideTried && current.traceNarrowTried && current.copyTried,
+    }), { stage: "reward" });
   }
 
   if (event.type === "SKIP_FREE_WRITE" && state.stage === "freeWrite") {
-    return updateProgress(state, { stage: "reward" });
+    return advanceAfterRead(state);
+  }
+
+  if (event.type === "DEFER_WRITING" && isWritingStage(state.stage)) {
+    return advanceAfterRead(state);
   }
 
   if (event.type === "COMPLETE_WORD_SELECTION") {
