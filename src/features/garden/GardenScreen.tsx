@@ -21,7 +21,7 @@ const ROWS = ["a", "ka", "sa", "ta", "na", "ha", "ma", "ya", "ra", "wa"] as cons
 
 /** 完了数を、数値スコアではなく庭の育ち具合として表示する。 */
 function completedCount(progress: LearningProgress): number {
-  return KANA_ORDER.filter((character) => progress.kana[character].completedOnce).length;
+  return KANA_ORDER.filter((character) => progress.kana[character].readCompleted).length;
 }
 
 /** 46区画を行構造のまま表示し、続きと任意復習を明確に分ける。 */
@@ -47,7 +47,7 @@ export function GardenScreen({ progress, resumeRoute, onContinue, onReview, onOp
         {ROWS.map((row) => (
           <div className="gardenScreen__row" key={row} aria-label={`${row} の はなだん`}>
             {KANA_ENTRIES.filter((entry) => entry.row === row).map((entry) => (
-              <KanaFlower key={entry.character} entry={entry} completed={progress.kana[entry.character].completedOnce} onReview={onReview} />
+              <KanaFlower key={entry.character} entry={entry} completed={progress.kana[entry.character].readCompleted} onReview={onReview} />
             ))}
           </div>
         ))}

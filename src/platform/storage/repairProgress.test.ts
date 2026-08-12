@@ -14,12 +14,67 @@ function resumableProgressAt(character: (typeof KANA_ORDER)[number], stage: Retu
   };
 }
 
+/** 現行fixtureを、migration境界へ渡す旧schema v1の完全形へ変換する。 */
+function legacyV1ProgressAt(character: (typeof KANA_ORDER)[number], stage: ReturnType<typeof progressAt>["stage"]) {
+  const current = resumableProgressAt(character, stage);
+  const settings = current.settings as typeof current.settings & { readonly learningMode?: unknown };
+  const { learningMode: _learningMode, ...legacySettings } = settings;
+
+  return {
+    ...current,
+    schemaVersion: 1,
+    kana: Object.fromEntries(KANA_ORDER.map((candidate) => {
+      const progress = current.kana[candidate] as typeof current.kana[typeof candidate] & {
+        readonly readCompleted?: boolean;
+        readonly writingCompleted?: boolean;
+        readonly completedOnce?: boolean;
+      };
+      const { readCompleted: _readCompleted, writingCompleted: _writingCompleted, ...legacy } = progress;
+      return [candidate, {
+        ...legacy,
+        completedOnce: progress.readCompleted ?? progress.completedOnce ?? false,
+      }];
+    })),
+    words: Object.fromEntries(Object.entries(current.words).map(([wordId, progress]) => [wordId, {
+      selected: progress.selected,
+      arranged: progress.arranged,
+      writingTried: progress.writingTried,
+    }])),
+    settings: legacySettings,
+  };
+}
+
 describe("repairProgress", () => {
+  it("v1の書字途中を読み書きモードの同じ段階へ移行する", () => {
+    const raw = legacyV1ProgressAt("い", "traceNarrow");
+    raw.kana["い"] = {
+      ...raw.kana["い"],
+      seen: true,
+      shapeMatched: true,
+      traceWideTried: true,
+      completedOnce: false,
+    };
+
+    const repaired = repairProgress(raw);
+
+    expect(repaired.schemaVersion).toBe(2);
+    expect(repaired.settings.learningMode).toBe("readingWriting");
+    expect(repaired).toMatchObject({
+      currentKanaIndex: KANA_ORDER.indexOf("い"),
+      stage: "traceNarrow",
+    });
+    expect(repaired.kana["い"]).toMatchObject({
+      readCompleted: true,
+      traceWideTried: true,
+      writingCompleted: false,
+    });
+  });
+
   it("正常な保存進捗を復元し、保存用に知らないフィールドと単語を除く", () => {
     const raw = {
       ...resumableProgressAt("く", "traceNarrow"),
       words: { neko: { selected: true, arranged: false, writingTried: true } },
-      settings: { speech: false, music: true, effects: false, reducedMotion: true },
+      settings: { learningMode: "reading", speech: false, music: true, effects: false, reducedMotion: true },
       name: "たろう",
       strokeHistory: [[{ x: 1, y: 2 }]],
     };
@@ -27,12 +82,12 @@ describe("repairProgress", () => {
     expect(repairProgress(raw)).toEqual({
       ...resumableProgressAt("く", "traceNarrow"),
       words: createInitialProgress().words,
-      settings: { speech: false, music: true, effects: false, reducedMotion: true },
+      settings: { learningMode: "reading", speech: false, music: true, effects: false, reducedMotion: true },
     });
   });
 
   it("旧schema v1保存にないlessonAttemptをnullへ後方互換で補正する", () => {
-    const raw = resumableProgressAt("く", "traceNarrow") as Record<string, unknown>;
+    const raw = legacyV1ProgressAt("く", "traceNarrow") as Record<string, unknown>;
     delete raw.lessonAttempt;
 
     expect(repairProgress(raw).lessonAttempt).toBeNull();
@@ -42,17 +97,23 @@ describe("repairProgress", () => {
     const raw = {
       ...progressWithCompletedCount(46),
       words: {
-        "w1-01": { selected: true, arranged: true, writingTried: true },
-        "w1-02": { selected: false, arranged: true, writingTried: true },
-        "w1-03": { selected: true, arranged: true, writingTried: true },
+        "w1-01": { selected: true, arranged: true, writingTried: true, readCompleted: true, writingCompleted: true },
+        "w1-02": { selected: false, arranged: true, writingTried: true, readCompleted: true, writingCompleted: true },
+        "w1-03": { selected: true, arranged: true, writingTried: true, readCompleted: true, writingCompleted: true },
         unknown: { selected: true, arranged: true, writingTried: true },
       },
     };
 
     const repaired = repairProgress(raw);
-    expect(repaired.words["w1-01"]).toEqual({ selected: true, arranged: true, writingTried: true });
-    expect(repaired.words["w1-02"]).toEqual({ selected: false, arranged: false, writingTried: false });
-    expect(repaired.words["w1-03"]).toEqual({ selected: false, arranged: false, writingTried: false });
+    expect(repaired.words["w1-01"]).toEqual({
+      selected: true,
+      arranged: true,
+      writingTried: true,
+      readCompleted: true,
+      writingCompleted: true,
+    });
+    expect(repaired.words["w1-02"]).toEqual(createInitialProgress().words["w1-02"]);
+    expect(repaired.words["w1-03"]).toEqual(createInitialProgress().words["w1-03"]);
     expect(repaired.words).not.toHaveProperty("unknown");
   });
 
@@ -124,7 +185,8 @@ describe("repairProgress", () => {
       traceNarrowTried: false,
       copyTried: false,
       freeWriteTried: false,
-      completedOnce: false,
+      readCompleted: false,
+      writingCompleted: false,
       guideCount: 3,
     });
     expect(repaired.kana["く"]).toEqual(createInitialProgress().kana["く"]);
@@ -147,7 +209,7 @@ describe("repairProgress", () => {
   });
 
   it("未知のスキーマは新規進捗へ安全に戻す", () => {
-    const unknownSchema = { ...progressAt("く", "traceNarrow"), schemaVersion: 2 };
+    const unknownSchema = { ...progressAt("く", "traceNarrow"), schemaVersion: 3 };
 
     expect(repairProgress(unknownSchema)).toEqual(createInitialProgress());
   });
@@ -204,14 +266,14 @@ describe("repairProgress", () => {
     raw.currentKanaIndex = KANA_ORDER.indexOf("ん");
     raw.stage = "reward";
     raw.rowReview = { row: "wa", step: "shape" };
-    raw.kana["く"] = { ...(raw.kana["く"] as object), completedOnce: "invalid" };
+    raw.kana["く"] = { ...(raw.kana["く"] as object), readCompleted: "invalid" };
 
     const repaired = repairProgress(raw);
 
     expect(repaired.currentKanaIndex).toBe(KANA_ORDER.indexOf("く"));
     expect(repaired.stage).toBe("intro");
     expect(repaired.rowReview).toBeNull();
-    expect(repaired.kana["ん"].completedOnce).toBe(true);
+    expect(repaired.kana["ん"].readCompleted).toBe(true);
   });
 
   it("最終文字が最初の未完了なら正しい最終行reviewを保持する", () => {

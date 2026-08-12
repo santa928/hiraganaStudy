@@ -15,7 +15,19 @@ describe("WordLessonScreen", () => {
   it("完了語の復習は選ぶ・並べる・書くを保存変更なしで通る", async () => {
     const user = userEvent.setup();
     const initial = createInitialProgress();
-    const progress = { ...initial, words: { ...initial.words, "w1-01": { selected: true, arranged: true, writingTried: true } } };
+    const progress = {
+      ...initial,
+      words: {
+        ...initial.words,
+        "w1-01": {
+          selected: true,
+          arranged: true,
+          writingTried: true,
+          readCompleted: true,
+          writingCompleted: true,
+        },
+      },
+    };
     const onSelected = vi.fn();
     const onArranged = vi.fn();
     const onWritten = vi.fn();
@@ -50,7 +62,19 @@ describe("WordLessonScreen", () => {
   it("並べ終えた案内音声を止めてから書字へ進む", async () => {
     const user = userEvent.setup();
     const initial = createInitialProgress();
-    const progress = { ...initial, words: { ...initial.words, "w1-01": { selected: true, arranged: false, writingTried: false } } };
+    const progress = {
+      ...initial,
+      words: {
+        ...initial.words,
+        "w1-01": {
+          selected: true,
+          arranged: false,
+          writingTried: false,
+          readCompleted: false,
+          writingCompleted: false,
+        },
+      },
+    };
     const onArranged = vi.fn();
     render(<WordLessonScreen progress={progress} wordId="w1-01" audio={audio} onSelected={vi.fn()} onArranged={onArranged} onWritten={vi.fn()} onReturnToGarden={vi.fn()} />);
 

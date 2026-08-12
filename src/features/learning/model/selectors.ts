@@ -3,7 +3,7 @@ import type { LearningProgress, LearningRoute } from "./types";
 
 /** 基本文字46文字を一度ずつ完了しているかを返す。 */
 export function isWordGardenUnlocked(progress: LearningProgress): boolean {
-  return KANA_ORDER.every((character) => progress.kana[character].completedOnce);
+  return KANA_ORDER.every((character) => progress.kana[character].readCompleted);
 }
 
 /** 保存進捗から、次に表示すべき主画面を決める。 */

@@ -16,7 +16,19 @@ describe("WordGardenScreen", () => {
   it("本線は最初の未完了語を維持し、完了語は別の復習口にする", async () => {
     const user = userEvent.setup();
     const initial = createInitialProgress();
-    const progress = { ...initial, words: { ...initial.words, "w1-01": { selected: true, arranged: true, writingTried: true } } };
+    const progress = {
+      ...initial,
+      words: {
+        ...initial.words,
+        "w1-01": {
+          selected: true,
+          arranged: true,
+          writingTried: true,
+          readCompleted: true,
+          writingCompleted: true,
+        },
+      },
+    };
     const onStart = vi.fn();
     const onReview = vi.fn();
     render(<WordGardenScreen progress={progress} audio={createAudio()} onStart={onStart} onReview={onReview} onBackToGarden={vi.fn()} />);

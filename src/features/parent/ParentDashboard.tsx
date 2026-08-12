@@ -24,8 +24,10 @@ export interface ParentDashboardProps {
 
 const LEAVES = ["left", "center", "right"] as const;
 const STATUS_FIELDS = [
-  ["seen", "みた"], ["shapeMatched", "かたち"], ["traceWideTried", "ふとい なぞり"], ["traceNarrowTried", "ほそい なぞり"], ["copyTried", "おてほん"], ["freeWriteTried", "じぶんで かく"], ["completedOnce", "さいた"],
+  ["seen", "みた"], ["shapeMatched", "かたち"], ["traceWideTried", "ふとい なぞり"], ["traceNarrowTried", "ほそい なぞり"], ["copyTried", "おてほん"], ["freeWriteTried", "じぶんで かく"], ["readCompleted", "さいた"],
 ] as const satisfies ReadonlyArray<readonly [keyof LearningProgress["kana"][typeof KANA_ENTRIES[number]["character"]], string]>;
+
+type ToggleSettingKey = Exclude<keyof LearningSettings, "learningMode">;
 
 /** 生の端末statusを、保護者に読める日本語へ変換する。 */
 function audioStatusLabel(status: AudioGuideStatus): string {
@@ -48,7 +50,7 @@ export function ParentDashboard({ progress, environment, onSettingsChange, onRes
     return () => { mountedRef.current = false; };
   }, []);
   const settings = progress.settings;
-  const changeSetting = (key: keyof LearningSettings): void => onSettingsChange({ ...settings, [key]: !settings[key] });
+  const changeSetting = (key: ToggleSettingKey): void => onSettingsChange({ ...settings, [key]: !settings[key] });
   const touchLeaf = (leaf: typeof LEAVES[number]): void => {
     setResetError(null);
     setLeafIndex((current) => LEAVES[current] === leaf ? current + 1 : 0);

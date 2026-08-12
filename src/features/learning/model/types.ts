@@ -11,6 +11,12 @@ export type LessonStage =
   | "freeWrite"
   | "reward";
 
+/** 保護者が端末全体へ設定する、読み中心または読み書きの学び方。 */
+export type LearningMode = "reading" | "readingWriting";
+
+/** 4段階書字のいずれかを表す、復習・後回し判定用の段階。 */
+export type WritingStage = Extract<LessonStage, "traceWide" | "traceNarrow" | "copyWithModel" | "freeWrite">;
+
 /** 1文字ごとに保存する体験済み状態と案内回数。 */
 export interface KanaProgress {
   readonly seen: boolean;
@@ -20,7 +26,8 @@ export interface KanaProgress {
   readonly traceNarrowTried: boolean;
   readonly copyTried: boolean;
   readonly freeWriteTried: boolean;
-  readonly completedOnce: boolean;
+  readonly readCompleted: boolean;
+  readonly writingCompleted: boolean;
   readonly guideCount: number;
 }
 
@@ -29,10 +36,13 @@ export interface WordProgress {
   readonly selected: boolean;
   readonly arranged: boolean;
   readonly writingTried: boolean;
+  readonly readCompleted: boolean;
+  readonly writingCompleted: boolean;
 }
 
 /** 音声・演出に関する端末内設定。 */
 export interface LearningSettings {
+  readonly learningMode: LearningMode;
   readonly speech: boolean;
   readonly music: boolean;
   readonly effects: boolean;
@@ -54,7 +64,7 @@ export interface LessonAttempt {
 
 /** 端末保存する学習全体の進捗。 */
 export interface LearningProgress {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly currentKanaIndex: number;
   readonly stage: LessonStage;
   readonly rowReview: RowReviewProgress | null;

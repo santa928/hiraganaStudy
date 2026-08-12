@@ -24,7 +24,8 @@ const KANA_PROGRESS_BOOLEAN_FIELDS = [
   "traceNarrowTried",
   "copyTried",
   "freeWriteTried",
-  "completedOnce",
+  "readCompleted",
+  "writingCompleted",
 ] as const;
 
 /** 新しい文字の、未体験状態を作る。 */
@@ -37,20 +38,27 @@ function createInitialKanaProgress(): KanaProgress {
     traceNarrowTried: false,
     copyTried: false,
     freeWriteTried: false,
-    completedOnce: false,
+    readCompleted: false,
+    writingCompleted: false,
     guideCount: 0,
   };
 }
 
 /** 60語すべての、未体験状態を作る。 */
 export function createInitialWordProgress(): WordProgress {
-  return { selected: false, arranged: false, writingTried: false };
+  return {
+    selected: false,
+    arranged: false,
+    writingTried: false,
+    readCompleted: false,
+    writingCompleted: false,
+  };
 }
 
 /** 46文字すべてが未体験の初期保存進捗を作る。 */
 export function createInitialProgress(): LearningProgress {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     currentKanaIndex: 0,
     stage: "intro",
     rowReview: null,
@@ -60,6 +68,7 @@ export function createInitialProgress(): LearningProgress {
     ) as Record<KanaCharacter, KanaProgress>,
     words: Object.fromEntries(WORD_ENTRIES.map((entry) => [entry.id, createInitialWordProgress()])),
     settings: {
+      learningMode: "reading",
       speech: true,
       music: false,
       effects: true,
@@ -93,7 +102,7 @@ function isResumableProgress(progress: unknown): progress is LearningProgress {
   const kana = candidate.kana;
 
   if (
-    candidate.schemaVersion !== 1
+    candidate.schemaVersion !== 2
     || typeof currentKanaIndex !== "number"
     || !Number.isInteger(currentKanaIndex)
     || currentKanaIndex < 0
@@ -232,7 +241,7 @@ function updateWordProgress(
 
 /** 46文字完了後に、本線の最初の未完了語だけを更新対象にする。 */
 function canAdvanceWord(state: LearningState, wordId: string, step: keyof WordProgress): boolean {
-  if (!KANA_ORDER.every((character) => state.progress.kana[character].completedOnce)) return false;
+  if (!KANA_ORDER.every((character) => state.progress.kana[character].readCompleted)) return false;
   const target = state.progress.words[wordId];
   if (!target || target[step]) return false;
   return WORD_ENTRIES.find((entry) => !state.progress.words[entry.id].writingTried)?.id === wordId;
@@ -262,7 +271,7 @@ function continueAfterReward(state: LearningState): LearningState {
     });
   }
 
-  const completed = updateCurrentKana(state, (current) => ({ ...current, completedOnce: true }));
+  const completed = updateCurrentKana(state, (current) => ({ ...current, readCompleted: true }));
 
   return advanceAfterRowReview(completed);
 }
@@ -322,7 +331,7 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
     }
 
     if (state.progress.rowReview?.step === "sound") {
-      return advanceAfterRowReview(updateCurrentKana(state, (current) => ({ ...current, soundMatched: true, completedOnce: true })));
+      return advanceAfterRowReview(updateCurrentKana(state, (current) => ({ ...current, soundMatched: true, readCompleted: true })));
     }
 
     return updateCurrentKana(state, (current) => ({ ...current, soundMatched: true }), { stage: "traceWide" });
@@ -330,7 +339,7 @@ export function reduceLesson(state: LearningState, event: LessonEvent): Learning
 
   if (event.type === "SKIP_SOUND_MATCH" && state.stage === "soundMatch") {
     if (state.progress.rowReview?.step === "sound") {
-      return advanceAfterRowReview(updateCurrentKana(state, (current) => ({ ...current, completedOnce: true })));
+      return advanceAfterRowReview(updateCurrentKana(state, (current) => ({ ...current, readCompleted: true })));
     }
 
     return updateProgress(state, { stage: "traceWide" });

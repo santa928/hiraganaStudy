@@ -4,6 +4,7 @@ import type { KanaCharacter } from "../../features/learning/content/types";
 import { createInitialProgress } from "../../features/learning/model/reducer";
 import type {
   KanaProgress,
+  LearningMode,
   LessonAttempt,
   LearningProgress,
   LearningSettings,
@@ -23,25 +24,44 @@ const KANA_PROGRESS_BOOLEAN_FIELDS = [
   "traceNarrowTried",
   "copyTried",
   "freeWriteTried",
-  "completedOnce",
+  "readCompleted",
+  "writingCompleted",
 ] as const;
+const WRITING_STAGES = new Set<LessonStage>(["traceWide", "traceNarrow", "copyWithModel", "freeWrite"]);
 
 /** 保存データの型境界で、配列を除くオブジェクトかを判定する。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** 既知語の順方向にだけ成立する、部分保存の単語進捗を補正する。 */
-function repairWordProgress(value: unknown, initial: WordProgress): WordProgress {
+/** schema v2の既知語を、成立可能な順方向だけへ補正する。 */
+function repairWordProgressV2(value: unknown, initial: WordProgress): WordProgress {
   if (!isRecord(value)) return initial;
   const selected = value.selected === true;
   const arranged = selected && value.arranged === true;
   const writingTried = arranged && value.writingTried === true;
-  return { selected, arranged, writingTried };
+  const readCompleted = arranged && value.readCompleted === true;
+  const writingCompleted = readCompleted && writingTried && value.writingCompleted === true;
+  return { selected, arranged, writingTried, readCompleted, writingCompleted };
 }
 
-/** 1文字分が完全な進捗かを検査する。壊れた文字は全体を初期化する。 */
-function repairKanaProgress(value: unknown, initial: KanaProgress): KanaProgress {
+/** schema v1の単語進捗を、読み・書字が分かれたv2へ移行する。 */
+function migrateWordProgressV1(value: unknown, initial: WordProgress): WordProgress {
+  if (!isRecord(value)) return initial;
+  const selected = value.selected === true;
+  const arranged = selected && value.arranged === true;
+  const writingTried = arranged && value.writingTried === true;
+  return {
+    selected,
+    arranged,
+    writingTried,
+    readCompleted: arranged,
+    writingCompleted: writingTried,
+  };
+}
+
+/** schema v2の1文字分を検査し、壊れた文字だけを初期化する。 */
+function repairKanaProgressV2(value: unknown, initial: KanaProgress): KanaProgress {
   if (!isRecord(value)) return initial;
 
   const hasValidBooleans = KANA_PROGRESS_BOOLEAN_FIELDS.every((field) => typeof value[field] === "boolean");
@@ -59,16 +79,68 @@ function repairKanaProgress(value: unknown, initial: KanaProgress): KanaProgress
     traceNarrowTried: value.traceNarrowTried as boolean,
     copyTried: value.copyTried as boolean,
     freeWriteTried: value.freeWriteTried as boolean,
-    completedOnce: value.completedOnce as boolean,
+    readCompleted: value.readCompleted as boolean,
+    writingCompleted: value.writingCompleted as boolean,
     guideCount,
   };
 }
 
-/** 音声・演出設定を、値ごとに安全な初期値へ補正する。 */
-function repairSettings(value: unknown, initial: LearningSettings): LearningSettings {
+/** schema v1の1文字分を、読み・書字が分かれたv2へ移行する。 */
+function migrateKanaProgressV1(value: unknown, initial: KanaProgress): KanaProgress {
+  if (!isRecord(value)) return initial;
+
+  const legacyBooleanFields = [
+    "seen",
+    "shapeMatched",
+    "soundMatched",
+    "traceWideTried",
+    "traceNarrowTried",
+    "copyTried",
+    "freeWriteTried",
+    "completedOnce",
+  ] as const;
+  const guideCount = value.guideCount;
+  if (
+    !legacyBooleanFields.every((field) => typeof value[field] === "boolean")
+    || typeof guideCount !== "number"
+    || !Number.isSafeInteger(guideCount)
+    || guideCount < 0
+  ) {
+    return initial;
+  }
+
+  const traceWideTried = value.traceWideTried as boolean;
+  const traceNarrowTried = value.traceNarrowTried as boolean;
+  const copyTried = value.copyTried as boolean;
+  const freeWriteTried = value.freeWriteTried as boolean;
+
+  return {
+    seen: value.seen as boolean,
+    shapeMatched: value.shapeMatched as boolean,
+    soundMatched: value.soundMatched as boolean,
+    traceWideTried,
+    traceNarrowTried,
+    copyTried,
+    freeWriteTried,
+    readCompleted: value.completedOnce === true || value.shapeMatched === true,
+    writingCompleted: traceWideTried && traceNarrowTried && copyTried && freeWriteTried,
+    guideCount,
+  };
+}
+
+/** 音声・演出・学び方設定を、値ごとに安全な初期値へ補正する。 */
+function repairSettings(
+  value: unknown,
+  initial: LearningSettings,
+  migratedMode: LearningMode | null,
+): LearningSettings {
   const candidate = isRecord(value) ? value : {};
 
   return {
+    learningMode: migratedMode
+      ?? (candidate.learningMode === "reading" || candidate.learningMode === "readingWriting"
+        ? candidate.learningMode
+        : initial.learningMode),
     speech: typeof candidate.speech === "boolean" ? candidate.speech : initial.speech,
     music: typeof candidate.music === "boolean" ? candidate.music : initial.music,
     effects: typeof candidate.effects === "boolean" ? candidate.effects : initial.effects,
@@ -122,7 +194,8 @@ function repairLessonAttempt(value: unknown, currentKana: KanaCharacter, stage: 
 export function repairProgress(raw: unknown): LearningProgress {
   const initial = createInitialProgress();
 
-  if (!isRecord(raw) || raw.schemaVersion !== 1) return initial;
+  if (!isRecord(raw) || (raw.schemaVersion !== 1 && raw.schemaVersion !== 2)) return initial;
+  const isLegacyV1 = raw.schemaVersion === 1;
 
   const hasValidCurrentKanaIndex = typeof raw.currentKanaIndex === "number"
     && Number.isSafeInteger(raw.currentKanaIndex)
@@ -136,17 +209,33 @@ export function repairProgress(raw: unknown): LearningProgress {
   const rawWords = isRecord(raw.words) ? raw.words : {};
 
   const kana = Object.fromEntries(
-    KANA_ORDER.map((character) => [character, repairKanaProgress(rawKana[character], initial.kana[character])]),
+    KANA_ORDER.map((character) => [
+      character,
+      isLegacyV1
+        ? migrateKanaProgressV1(rawKana[character], initial.kana[character])
+        : repairKanaProgressV2(rawKana[character], initial.kana[character]),
+    ]),
   ) as Record<KanaCharacter, KanaProgress>;
-  const firstIncompleteIndex = KANA_ORDER.findIndex((character) => !kana[character].completedOnce);
+  const firstIncompleteIndex = KANA_ORDER.findIndex((character) => !kana[character].readCompleted);
   const allCompleted = firstIncompleteIndex < 0;
-  const normalizedIndex = allCompleted ? KANA_ORDER.length - 1 : firstIncompleteIndex;
-  const positionChanged = currentKanaIndex !== normalizedIndex;
-  const normalizedStage = allCompleted ? "reward" : positionChanged ? initial.stage : stage;
-  const currentKana = KANA_ORDER[normalizedIndex] ?? KANA_ORDER[0];
-  const repairedRowReview = !allCompleted && hasValidCurrentKanaIndex && !positionChanged
-    ? repairRowReview(raw.rowReview, currentKana, normalizedStage)
+  const savedKana = KANA_ORDER[currentKanaIndex] ?? KANA_ORDER[0];
+  const candidateRowReview = hasValidCurrentKanaIndex
+    ? repairRowReview(raw.rowReview, savedKana, stage)
     : null;
+  const preservesActiveWriting = hasValidCurrentKanaIndex
+    && WRITING_STAGES.has(stage)
+    && kana[savedKana].readCompleted
+    && !kana[savedKana].writingCompleted;
+  const preservesCurrentUnread = !allCompleted && currentKanaIndex === firstIncompleteIndex;
+  const preservesRowReview = candidateRowReview !== null;
+  const preservesSavedPosition = preservesActiveWriting || preservesCurrentUnread || preservesRowReview;
+  const normalizedIndex = preservesSavedPosition
+    ? currentKanaIndex
+    : allCompleted ? KANA_ORDER.length - 1 : firstIncompleteIndex;
+  const positionChanged = currentKanaIndex !== normalizedIndex;
+  const normalizedStage = preservesSavedPosition ? stage : allCompleted ? "reward" : initial.stage;
+  const currentKana = KANA_ORDER[normalizedIndex] ?? KANA_ORDER[0];
+  const repairedRowReview = !positionChanged ? repairRowReview(raw.rowReview, currentKana, normalizedStage) : null;
   const repairedStage = normalizedStage === "soundMatch" && repairedRowReview === null
     ? "traceWide"
     : normalizedStage;
@@ -155,19 +244,21 @@ export function repairProgress(raw: unknown): LearningProgress {
   for (const entry of WORD_ENTRIES) {
     const repaired = hasIncompleteWord
       ? initial.words[entry.id]
-      : repairWordProgress(rawWords[entry.id], initial.words[entry.id]);
+      : isLegacyV1
+        ? migrateWordProgressV1(rawWords[entry.id], initial.words[entry.id])
+        : repairWordProgressV2(rawWords[entry.id], initial.words[entry.id]);
     repairedWords[entry.id] = repaired;
-    if (!repaired.writingTried) hasIncompleteWord = true;
+    if (!repaired.readCompleted) hasIncompleteWord = true;
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     currentKanaIndex: normalizedIndex,
     stage: repairedStage,
     rowReview: repairedRowReview,
     lessonAttempt: repairLessonAttempt(raw.lessonAttempt, currentKana, repairedStage),
     kana,
     words: allCompleted ? repairedWords : initial.words,
-    settings: repairSettings(raw.settings, initial.settings),
+    settings: repairSettings(raw.settings, initial.settings, isLegacyV1 ? "readingWriting" : null),
   };
 }

@@ -30,7 +30,7 @@ export function stateAt(character: KanaCharacter, stage: LessonStage): LearningS
   };
 }
 
-/** 先頭から指定数の文字だけを一度完了した保存進捗を作るテストfixture。 */
+/** 先頭から指定数の文字だけを読み書きとも体験した保存進捗を作るテストfixture。 */
 export function progressWithCompletedCount(count: number): LearningProgress {
   const initial = createInitialProgress();
   const completedCharacters = new Set(KANA_ORDER.slice(0, count));
@@ -42,7 +42,8 @@ export function progressWithCompletedCount(count: number): LearningProgress {
         character,
         {
           ...initial.kana[character],
-          completedOnce: completedCharacters.has(character),
+          readCompleted: completedCharacters.has(character),
+          writingCompleted: completedCharacters.has(character),
         },
       ]),
     ) as LearningProgress["kana"],

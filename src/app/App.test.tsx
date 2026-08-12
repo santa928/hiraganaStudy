@@ -264,7 +264,7 @@ describe("App", () => {
       ...base,
       currentKanaIndex: 1,
       stage: "intro",
-      kana: { ...base.kana, あ: { ...base.kana.あ, seen: true, completedOnce: true } },
+      kana: { ...base.kana, あ: { ...base.kana.あ, seen: true, readCompleted: true } },
     };
     const { runtime, save } = createRuntime(() => Promise.resolve(saved));
     render(<App runtime={runtime} />);
